@@ -36,6 +36,9 @@ import machine
 import utime
 
 # Import the protocol, sensor payload and nanomodem modules
+print("Importing expansion board modules...")
+from pybd_expansion.main.max3221e import MAX3221E
+from pybd_expansion.main.powermodule import PowerModule
 print("Importing sensor payload package...")
 import sensor_payload.main.sensor_payload as sensor_payload
 print("Importing network protocol package...")
@@ -55,6 +58,16 @@ def run_mainloop():
     
     # Initialize the node state as always on
     node_state = STATE_ALWAYS_ON
+    
+    # Enable the NM3 power supply on the powermodule
+    powermodule = PowerModule()
+    powermodule.enable_nm3()
+
+    # Enable power supply to 232 driver
+    pyb.Pin.board.EN_3V3.on()
+    pyb.Pin('Y5', pyb.Pin.OUT, value=0)  # enable Y4 Pin as output
+    max3221e = MAX3221E(pyb.Pin.board.Y5)
+    max3221e.tx_force_on()  # Enable Tx Driver
    
     # Wait for 6 seconds to let the modem start up
     print("6 second delay to allow the NM3 to boot up...")
@@ -72,6 +85,7 @@ def run_mainloop():
     net_protocol.init_interfaces(modem, sensor_pl)
 
     # Start an infinite loop, listen to packets and respond
+    first_frame_finished = False # this is for testing the sleep timing returned by the network protocol
     while True:
         
         # Check if a packet has been received
@@ -80,6 +94,7 @@ def run_mainloop():
         if modem.has_received_packet():
             # If it has, process it and pass it on to the TDA-MAC protocol handler
             packet = modem.get_received_packet()
+            payload = bytes(packet.packet_payload)
             # Here I assume that this packet is definitely for Networking: "UN..."
             # In the full main loop, we will direct "UL..." and "UN..." packets to their respective modules here.
             # After localisation is finished, it will be easiest to return the (Lat, Lon) here, 
@@ -91,7 +106,15 @@ def run_mainloop():
             # If the packet is "UN...", call this function handling all networking packets
             # It returns a flag stating whether the node can go to a sleep state until the next frame,
             # and the time [msec] until the next expected REQ packet from the master node (gateway or relay)
+            if first_frame_finished and (payload[0:3] == b'UNR'):
+				print("REQ Packet received. Time since I last went to sleep: " + \
+						str(utime.ticks_diff(utime.ticks_ms(), last_sleep_start_time)) + " msec")
             (can_go_to_sleep, time_till_next_req) = net_protocol.handle_packet(packet)
+            if can_go_to_sleep:
+				print("I can go to sleep. Next REQ expected after " + str(time_till_next_req) + " msec")
+				last_sleep_start_time = utime.ticks_ms()
+				first_frame_finished = True
+				
             
             # If the TDA-MAC initialization has finished and the node can go to sleep, update the node state
             if (can_go_to_sleep):

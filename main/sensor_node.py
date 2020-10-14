@@ -270,8 +270,8 @@ class NetProtocol:
             else:
                 print("Sensor readings sent")
                 
-            # Wait for a retransmission request, if one arrives (60 sec timeout)
-            waitForPacket(self.nm, 60*1000)
+            # Wait for a retransmission request, if one arrives (10 sec timeout)
+            gwf.waitForPacket(self.nm, 10*1000)
                 
             # If a packet was received
             if self.nm.has_received_packet():       
@@ -282,7 +282,7 @@ class NetProtocol:
                 pktType = packet.packet_type
                 # If it is a REQ, process it by calling this function again
                 if (pktType == 'B') and (srcId == self.masterNode) and (len(payload) > 5) and (payload[0:3] == b'UNR'):
-                    sleepFlag = dealWithBroadcastREQ(self, srcId, payload)
+                    sleepFlag = self.dealWithBroadcastREQ(srcId, payload)
         
         # Return the flag indicating if I can go to sleep or should stay awake
         return (sleepFlag == 1)
@@ -377,7 +377,7 @@ class NetProtocol:
                     pyb.delay(round(gwf.dataPktDur*1000) + self.guardInt) # delay while we are transmitting the packet
                     
             # Wait for a repeated REQ asking for retransmissions (10 sec timeout)
-            waitForPacket(self.nm, 10*1000)
+            gwf.waitForPacket(self.nm, 10*1000)
                 
             # If a packet was received
             if self.nm.has_received_packet():       
@@ -429,7 +429,7 @@ class NetProtocol:
         success = False
         
         # Create the payload packet containing all measured propagation delays and link qualities
-        packet = b'UNNR' + struct.pack('B', self.thisNode)
+        packet = b'UNNR'
         for n in range(len(propDelays)):
             packet += struct.pack('f', propDelays[n]) + struct.pack('B', linkQuality[n])
         
