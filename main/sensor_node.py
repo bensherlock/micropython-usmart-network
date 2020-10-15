@@ -115,7 +115,7 @@ class NetProtocol:
             self.dealWithTDIPacket(payload)
         # Broadcast REQ packet from the master node
         elif (pktType == 'B') and (srcId == self.masterNode) and (len(payload) > 5) and (payload[0:3] == b'UNR'):
-            canGoToSleep = self.dealWithBroadcastREQ(srcId, payload)
+            canGoToSleep = self.dealWithBroadcastREQ(srcId, payload, None)
         # Unicast REQ packet
         elif (pktType == 'U') and (len(payload) > 4) and (payload[0:3] == b'UNR'):
             canGoToSleep = self.dealWithUnicastREQ(payload)
@@ -129,8 +129,7 @@ class NetProtocol:
         timeTillNextFrame = 0
         if canGoToSleep:
             currTime = utime.ticks_ms()
-            timeTillNextFrame = self.frameInterval - utime.ticks_diff(utime.ticks_ms(), self.frameStartTime)
-            
+            timeTillNextFrame = self.frameInterval - utime.ticks_diff(utime.ticks_ms(), self.frameStartTime)   
         return (canGoToSleep, timeTillNextFrame)
     
     ##################################################################
@@ -178,14 +177,16 @@ class NetProtocol:
         # If this TDI is addressed to me, update the Tx delay and the master node address
         tdiDelivered = False
         if destNode == self.thisNode:
-            self.txDelay = round(txd*1000) # [ms]
-            self.frameInterval = round(frameInt*1000) # [ms]
-            self.subframeLength = round(sfLength*1000) # [ms]
+            self.txDelay = round(txd*1e3) # [ms]
+            self.frameInterval = round(frameInt*1e3) # [ms]
             self.masterNode = srcNode
             tdiDelivered = True
         
         # Otherwise this TDI needs to be forwarded to the destination node
-        else:            
+        else:           
+            # First note the subframe length, because I will be the master node for this node
+            self.subframeLength = round(sfLength*1e3) # [ms] 
+            
             # Try sending a TDI and receiving an ACK
             pyb.delay(round(gwf.ackPktDur*1000)) # first, sleep long enough to transmit the Auto-ACK
             tdiDelivered = gwf.sendTDIPackets(self.nm, self.thisNode, [destNode], [txd], frameInt, 0, [True])[0]
@@ -206,21 +207,21 @@ class NetProtocol:
     ####################################################
     ### Function to deal with a Broadcast REQ packet ###
     ####################################################
-    def dealWithBroadcastREQ(self, srcId, payload):
+    def dealWithBroadcastREQ(self, srcId, payload, dataPacket):
         
-        # Start reading the sensor and note the time of receiving this packet
-        self.sensor.start_acquisition()
+        # Start reading the sensor if the data packet is not given (new transmission)
+        if not dataPacket:
+            self.sensor.start_acquisition()
+        # Note the time of receiving this packet
         reqTime = utime.ticks_ms()
         
         # If this is the first broadcast REQ of the frame, note the frame start time
         reqIndex = struct.unpack('B', payload[3:4])[0]
-        if reqIndex == 1:
-            self.frameStartTime = reqTime
             
         # Update the start of frame time
         tsfs = struct.unpack('f', payload[4:8])[0]
         timeSinceFrameStart = round(tsfs*1000)
-        self.frameStartTime = reqTime - timeSinceFrameStart
+        self.frameStartTime = utime.ticks_add(reqTime, -timeSinceFrameStart)
             
         # Check if I need to go back to always-on state after this
         sleepFlag = struct.unpack('B', payload[8:9])[0]
@@ -241,20 +242,22 @@ class NetProtocol:
             if payload[9:10] == b'L':
                 # Create the data payload
                 dataPayload = b'L' + struct.pack('f', self.location[0]) + b'L' + struct.pack('f', self.location[1])
+                packetPayload = b'UND' + struct.pack('B', self.thisNode) + dataPayload
             
             # Otherwise, this is a request for sensor readings
             else:   
                 # Read the sensor and create the data payload
                 try:
-                    self.sensor.process_acquisition()           
-                    dataPayload = self.sensor.get_latest_data_as_bytes()
+                    if not dataPacket:
+                        self.sensor.process_acquisition()           
+                        dataPayload = self.sensor.get_latest_data_as_bytes()
+                        packetPayload = b'UND' + struct.pack('B', self.thisNode) + dataPayload
+                    else:
+                        packetPayload = dataPacket                       
                 except Exception as e:
                     # If an Exception was caught, print the error
                     print("Error reading the sensor: " + str(e))
-                    dataPayload = b'sensor_error'
-                
-            # Add a TDA-MAC header to make the full packet payload
-            packetPayload = b'UND' + struct.pack('B', self.thisNode) + dataPayload
+                    packetPayload = b'UND' + struct.pack('B', self.thisNode) + b'sensor_error'
             
             # Sleep for the remaining part of the transmit delay
             timeElapsed = utime.ticks_diff(utime.ticks_ms(), reqTime)
@@ -269,6 +272,10 @@ class NetProtocol:
                 print("Location data sent: Lat=" + '%.5f' % self.location[0] + ", Long=" + '%.5f' % self.location[1])
             else:
                 print("Sensor readings sent")
+            
+            # If I have any child nodes,m do not go to sleep after this REQ    
+            if self.childNodes:
+                sleepFlag = 0
                 
             # Wait for a retransmission request, if one arrives (10 sec timeout)
             gwf.waitForPacket(self.nm, 10*1000)
@@ -282,7 +289,11 @@ class NetProtocol:
                 pktType = packet.packet_type
                 # If it is a REQ, process it by calling this function again
                 if (pktType == 'B') and (srcId == self.masterNode) and (len(payload) > 5) and (payload[0:3] == b'UNR'):
-                    sleepFlag = self.dealWithBroadcastREQ(srcId, payload)
+                    canGoToSleep = self.dealWithBroadcastREQ(srcId, payload, packetPayload)
+                # For any other packet, pass it to the main packet handling function
+                else:
+                    canGoToSleep = self.handle_packet(packet)
+                sleepFlag = 1 if (canGoToSleep) else 0
         
         # Return the flag indicating if I can go to sleep or should stay awake
         return (sleepFlag == 1)
@@ -315,17 +326,17 @@ class NetProtocol:
         
         # Try gatheing the data from all child nodes
         packetBuffer = list()
-        nodesToRespond = self.childNodes
+        nodesToRespond = self.childNodes.copy()
         numRetries = 3
         for n in range(1, numRetries+1):
         
             # Transmit a broadcast REQ packet
-            tsfs = utime.ticks_diff(utime.ticks_ms(), self.frameStartTime)
-            gwf.sendBroadcastREQ(self.nm, payload[6:7].decode(), n, tsfs, sleepFlag, nodesToRespond)
+            tsfs = utime.ticks_diff(utime.ticks_ms(), reqTime)
+            gwf.sendBroadcastREQ(self.nm, payload[6:7].decode(), n, 1e-3*float(tsfs), sleepFlag, nodesToRespond)
         
             # Go into a loop listening for payload packets from child nodes
             sfStartTime = utime.ticks_ms()
-            while utime.ticks_diff(utime.ticks_ms(), sfStartTime) <=  (subframeLength + self.guardInt):
+            while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sfStartTime, self.subframeLength + self.guardInt)) < 0:
                 
                 # Check if a packet has been received
                 self.nm.poll_receiver()
@@ -334,11 +345,11 @@ class NetProtocol:
                     # Decode the packet
                     packet = self.nm.get_received_packet()
                     payload = bytes(packet.packet_payload)
-                    
                     # If the source address is one of the child nodes
                     srcAddr = struct.unpack('B', payload[3:4])[0]
-                    if srcAddr in self.childNodes: 
+                    if (payload[0:3] == b'UND') and (srcAddr in self.childNodes): 
                         # Store the packet in the forwarding buffer and take out the child node out of the list
+                        print("  Data packet received from N" + "%03d" % srcAddr)
                         packetBuffer.append(packet)
                         nodesToRespond.remove(srcAddr)
                             
@@ -377,31 +388,38 @@ class NetProtocol:
                     pyb.delay(round(gwf.dataPktDur*1000) + self.guardInt) # delay while we are transmitting the packet
                     
             # Wait for a repeated REQ asking for retransmissions (10 sec timeout)
-            gwf.waitForPacket(self.nm, 10*1000)
+            txEndTime = utime.ticks_ms()
+            timeout = 10*1000
+            anotherREQReceived = False
+            while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(txEndTime, timeout)) < 0:
                 
-            # If a packet was received
-            if self.nm.has_received_packet():       
-                # Read the incoming packet and see if it is a REQ
-                packet = self.nm.get_received_packet()
-                payload = bytes(packet.packet_payload)
-                srcId = packet.source_address
-                pktType = packet.packet_type
-                # If it is a REQ, resend some of the packet again
-                if (pktType == 'U') and (len(payload) > 4) and (payload[0:3] == b'UNR'):
-                
-                    # Check if I need to go back to always-on state after this
-                    sleepFlag = struct.unpack('B', payload[5:6])[0]
+                # Check if a packet has been received
+                self.nm.poll_receiver()
+                self.nm.process_incoming_buffer()
+                if self.nm.has_received_packet():       
+                    # Read the incoming packet and see if it is a REQ
+                    packet = self.nm.get_received_packet()
+                    payload = bytes(packet.packet_payload)
+                    srcId = packet.source_address
+                    pktType = packet.packet_type
+                    # If it is a REQ, resend some of the packets again
+                    if (pktType == 'U') and (len(payload) > 4) and (payload[0:3] == b'UNR'):
                     
-                    # Decode the addresses of nodes expected to respond
-                    destAddr = list()
-                    for n in range(7, len(payload)):
-                        addr = struct.unpack('B', payload[n:n+1])[0]
-                        destAddr.append(int(addr))
-            else:
-                frameIsOver = True # Timeout means no retransmissions are needed
+                        # Check if I need to go back to always-on state after this
+                        anotherREQReceived = True
+                        sleepFlag = struct.unpack('B', payload[5:6])[0]
+                        
+                        # Decode the addresses of nodes expected to respond
+                        destAddr = list()
+                        for n in range(7, len(payload)):
+                            addr = struct.unpack('B', payload[n:n+1])[0]
+                            destAddr.append(int(addr))
+                            
+            # Timeout means no retransmissions are needed        
+            frameIsOver = not anotherREQReceived
                 
         # Return the sleep flag
-        return sleepFlag
+        return (sleepFlag == 1)
                     
     
     ##################################################################

@@ -139,7 +139,8 @@ def sendBroadcastREQ(nm, dataType, reqIndex, timeSinceFrameStart, canGoToSleep, 
         
     # Transmit the broadcast REQ packet
     print("Trasmitting Broadcast REQ...")
-    nm.send_broadcast_message(reqPacket)    
+    nm.send_broadcast_message(reqPacket)
+    pyb.delay(round(reqPktDur*1e3))    
 
 ### Function to calculate TDA-MAC transmit delays
 def calcTDAMACSchedule(propDelays, connNodes, guardInt):
@@ -186,3 +187,5 @@ def waitForPacket(nm, timeout = 10*1000, step = 50):
             break
         nm.poll_receiver()
         nm.process_incoming_buffer()
+        
+    return (timeoutCounter <= timeout)
