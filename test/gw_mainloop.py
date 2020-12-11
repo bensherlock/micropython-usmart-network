@@ -82,6 +82,10 @@ def run_mainloop():
     # Start by doing the network discovery and setup
     net_protocol.do_net_discovery()
     net_protocol.setup_net_schedule() # guard interval [msec] can be specified as function input (default: 500)
+    
+    # Extract network topology and schedule information as JSON
+    net_info = net_protocol.get_net_info_json()
+    print(net_info) # print it in this test script (send over Wi-Fi in the real app)
 
     # Start an infinite loop, gathering sensor data
     cycle_counter = 0
@@ -104,6 +108,9 @@ def run_mainloop():
             # When finished, instruct the network to sleep until the next frame
             time_till_next_frame = data_gathering_interval - utime.ticks_diff(utime.ticks_ms(), frame_start_time)
             net_protocol.set_network_to_sleep(time_till_next_frame)
+            # Extract network topology and schedule information as JSON
+            net_info = net_protocol.get_net_info_json()
+            print(net_info) # print it in this test script (send over Wi-Fi in the real app)
 
         # Go to sleep yourself until the start of next frame
         # [This will need to be replaced by a proper sleep mode (with powered down modules)]

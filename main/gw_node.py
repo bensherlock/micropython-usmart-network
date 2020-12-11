@@ -9,6 +9,7 @@
 #   net_protocol.init(modem, node_addr)             # initialise it with the modem object and list of sensor node addresses
 #   net_protocol.do_net_discovery()                 # perform network discovery
 #   net_protocol.setup_net_schedule(guard_int=500)  # set up TDA-MAC schedule and distribute it to all nodes
+#   net_protocol.get_net_info_json                  # get network info as JSON
 #   net_protocol.set_network_to_sleep(time_till_next_frame) # instruct all nodes to go to sleep for a given period [msec]
 #   packets = net_protocol.gather_sensor_data(time_till_next_frame, stay_awake, data_type="S") #  perform a data gathering cycle 
 #       # The function above takes two inputs: 
@@ -66,7 +67,12 @@ class NetProtocol:
         self.lqThreshold = 5        # link quality thredhold (only use links of at least this quality if possible)
         self.debugFlag = False      # set to True for more console output
         self.dualHop = True         # enable dual-hop networking by default
-    
+        
+        # Empty dual-hop parameters by default
+        self.dhPropDelays = None
+        self.dhRelays = None
+        self.sfLengths = None
+           
     #########################    
     # Initialisation method #
     ######################### 
@@ -142,11 +148,14 @@ class NetProtocol:
         # Print out the discovered network topology
         print('')
         print("*** Network Topology ***")
+        self.lq = [0]*numNodes
         for n in range(len(self.nodeAddr)):
             if self.shNodes[n]:
+                self.lq[n] = shlq[n]
                 print("N" + "%03d" % self.nodeAddr[n] + " direct: distance - " + \
                         '%d' % round(self.shPropDelays[n]*1.5)  + 'm, LQ - ' + str(shlq[n]))
             elif self.dhNodes[n]:
+                self.lq[n] = dhlq[n]
                 print("N" + "%03d" % self.nodeAddr[n] + " direct: distance to relay - " + \
                         '%d' % round(self.dhPropDelays[n]*1.5)  + 'm, LQ - ' + str(dhlq[n]))
             else:
@@ -168,6 +177,9 @@ class NetProtocol:
 
         # Distribute transmit delay instructions to all direct nodes
         gwf.sendTDIPackets(self.nm, self.thisNode, self.nodeAddr, shTxDelays, 0, self.shNodes)
+        
+        # Save the single-hop transmit delays into a new list
+        self.txDelays = shTxDelays.copy()
         
         # If some nodes are connected via dual-hop, setup dual-hop TDA-MAC
         self.relayAddr = list()
@@ -194,12 +206,32 @@ class NetProtocol:
                 self.relayLoads[self.nodeAddr.index(self.relayAddr[n])] += len(childNodeAddr)
                         
                 # Calculate the TDA-MAC schedule
-                (txDelays, self.sfLengths[n]) = gwf.calcTDAMACSchedule(propDelays, [True]*len(propDelays), self.guardInt)
-                    
+                (txDelays, self.sfLengths[n]) = gwf.calcTDAMACSchedule(propDelays, [True]*len(propDelays), self.guardInt)   
                 # Distribute TDI packets to all dual-hop nodes
                 gwf.send2HopTDIPackets(self.nm, self.thisNode, self.relayAddr[n], childNodeAddr, txDelays, self.sfLengths[n])
                 
+                # Note the transmit delay for each child node
+                for a in childNodeAddr:
+                    self.txDelays[self.nodeAddr.index(a)] = txDelays[childNodeAddr.index(a)]
+                
         print("*** Network setup complete ***")
+        
+    ###############################################################    
+    # Method to extract the network topology and schedule as JSON #
+    ###############################################################
+    def get_net_info_json(self):
+        
+        # Put the network connection pattern, propagation delays, link qualities, and TDA-MAC schedule into a JSON object
+        jason = {"addresses": self.nodeAddr,
+                 "direct_connections": self.shNodes,
+                 "single_hop_prop_delays": self.shPropDelays,
+                 "dual_hop_prop_delays": self.dhPropDelays,
+                 "relays": self.dhRelays,
+                 "link_quality": self.lq,
+                 "transmit_delays": self.txDelays,
+                 "subframe_lengths": self.sfLengths,
+                 }
+        return jason
     
     #####################################################################    
     # Method to perform a round of data gathering from all sensor nodes #
