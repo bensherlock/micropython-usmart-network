@@ -65,14 +65,16 @@ class NetProtocol:
         self.frameStartTime = 0             # start time of the current frame
         self.guardInt = 200                 # guard interval for timed Tx/Rx [ms]
         self.location = (0.0, 0.0)          # tuple to store the Lat-Long location
+        self.wdt = None                     # WDT passed from mainloop to be fed during longer loops.
         print('Initializing the TDA-MAC parameters...')
         
     # Method to initialize the interfaces with the sensor payload and modem
-    def init_interfaces(self, modem, sensor_payload):
+    def init_interfaces(self, modem, sensor_payload, wdt=None):
     
         # Save the references to these objects
         self.nm = modem
         self.sensor = sensor_payload
+        self.wdt = wdt
         
         # Query this node's address and display it
         addr = -1
@@ -107,7 +109,11 @@ class NetProtocol:
         # If in debug mode, display a message in terminal
         if self.debug_flag:
             print('    Rx from N' + str(packet.source_address) + ': ' + str(payload))
-            
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Network discovery request packet
         if (pktType == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNN?'):
             self.dealWithNetDiscReq(payload)
@@ -152,7 +158,7 @@ class NetProtocol:
         print('Node discovery request received from Node ' + str(srcNode))
             
         # Perform network discovery
-        (propDelays, linkQuality) = gwf.doNetDiscovery(self.nm, nodeList)
+        (propDelays, linkQuality) = gwf.doNetDiscovery(self.nm, nodeList, self.wdt)
             
         # Send the node discovery results packet to the requesting node
         self.sendNodeDiscPacket(srcNode, propDelays, linkQuality)
@@ -187,7 +193,7 @@ class NetProtocol:
             
             # Try sending a TDI and receiving an ACK
             pyb.delay(100) # first, sleep long enough to transmit the Auto-ACK
-            tdiDelivered = gwf.sendTDIPackets(self.nm, self.thisNode, [destNode], [txd], 0, [True])[0]
+            tdiDelivered = gwf.sendTDIPackets(self.nm, self.thisNode, [destNode], [txd], 0, [True], self.wdt)[0]
                             
             # Save the destination node as the child node
             if not (destNode in self.childNodes):
@@ -208,8 +214,9 @@ class NetProtocol:
     def dealWithBroadcastREQ(self, srcId, payload, dataPacket):
         
         # Start reading the sensor if the data packet is not given (new transmission)
-        if not dataPacket:
-            self.sensor.start_acquisition()
+        # mainloop is responsible for initiating sensor data acquisition and processing now.
+        # if not dataPacket:
+        #    self.sensor.start_acquisition()
         # Note the time of receiving this packet
         reqTime = utime.ticks_ms()
         
@@ -247,7 +254,8 @@ class NetProtocol:
                 # Read the sensor and create the data payload
                 try:
                     if not dataPacket:
-                        self.sensor.process_acquisition()           
+                        # mainloop is responsible for initiating sensor data acquisition and processing now.
+                        # self.sensor.process_acquisition()
                         dataPayload = self.sensor.get_latest_data_as_bytes()
                         packetPayload = b'UND' + struct.pack('B', self.thisNode) + dataPayload
                     else:
@@ -279,7 +287,11 @@ class NetProtocol:
             reTxTimeout = 10000
             timerStart = utime.ticks_ms()
             while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, reTxTimeout)) < 0:
-            
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Check if a packet has been received
                 self.nm.poll_receiver()
                 self.nm.process_incoming_buffer()
@@ -339,7 +351,11 @@ class NetProtocol:
             numREQCopies = 3
             interval = 2000 # 2 second intervals between REQ copies
             for n in range(numREQCopies):
-            
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Transmit blank broadcast REQ
                 ttnf = max(0, self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp))
                 print("Sending Blank Broadcast REQ...")
@@ -355,7 +371,11 @@ class NetProtocol:
             nodesToRespond = self.childNodes.copy()
             numRetries = 3
             for n in range(1, numRetries+1):
-            
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Transmit a broadcast REQ packet
                 ttnf = max(0, self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp))
                 print("Sending Broadcast REQ...")
@@ -364,7 +384,11 @@ class NetProtocol:
                 # Go into a loop listening for payload packets from child nodes
                 sfStartTime = utime.ticks_ms()
                 while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sfStartTime, self.subframeLength + self.guardInt)) < 0:
-                    
+
+                    # Feed the watchdog
+                    if self.wdt:
+                        self.wdt.feed()
+
                     # Check if a packet has been received
                     self.nm.poll_receiver()
                     self.nm.process_incoming_buffer()
@@ -394,7 +418,11 @@ class NetProtocol:
             
                 # Forward the packets 
                 for fwPacket in packetBuffer:
-                    
+
+                    # Feed the watchdog
+                    if self.wdt:
+                        self.wdt.feed()
+
                     # Send the packet
                     payload = bytes(fwPacket.packet_payload)
                     srcAddr = struct.unpack('B', payload[3:4])[0]
@@ -407,7 +435,12 @@ class NetProtocol:
                     
                 # If there are any child nodes who did not respond with a data packet
                 for unrNode in nodesToRespond:
-                    if unrNode in destAddr:          
+                    if unrNode in destAddr:
+
+                        # Feed the watchdog
+                        if self.wdt:
+                            self.wdt.feed()
+
                         # Send blank packets to the Gateway
                         payload = b'UND' + struct.pack('B', unrNode) + b'no_packet'
                         print("Sending blank data packet from Node " + str(unrNode) + " to Node " + str(srcNode) + "...") 
@@ -419,7 +452,11 @@ class NetProtocol:
                 timeout = 10000
                 anotherREQReceived = False
                 while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(txEndTime, timeout)) < 0:
-                    
+
+                    # Feed the watchdog
+                    if self.wdt:
+                        self.wdt.feed()
+
                     # Check if a packet has been received
                     self.nm.poll_receiver()
                     self.nm.process_incoming_buffer()
@@ -487,7 +524,11 @@ class NetProtocol:
         maxTries = 5 # maximum attempts at sending it
         timeout = 5 # 5 second ACK timeout
         for k in range(maxTries):
-            
+
+            # Feed the watchdog
+            if self.wdt:
+                self.wdt.feed()
+
             # Send the packet
             print("Sending node discovery results to Node " + str(reqNode))
             # Transmit the packet requiring an ACK

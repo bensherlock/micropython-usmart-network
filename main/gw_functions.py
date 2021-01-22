@@ -43,7 +43,7 @@ tdiPktDur = round(105 + (14+16) * 12.5) # TDI packet duration
 ackPktDur = round(105 + (5+16) * 12.5) # ACK packet
 
 ### Function that performs initial network discovery
-def doNetDiscovery(nm, nodeAddr):
+def doNetDiscovery(nm, nodeAddr, wdt=None):
 
     # Function parameters
     numTestTx = 5 # Number of test transmissions for each node
@@ -57,7 +57,11 @@ def doNetDiscovery(nm, nodeAddr):
          
         # Send a test message to the node and parse the response
         for k in range(numTestTx):
-            
+
+            # Feed the watchdog
+            if wdt:
+                wdt.feed()
+
             # Ping the node
             print("Sending test MSG to N" + "%03d" % nodeAddr[n] + "...")
             delay = nm.send_unicast_message_with_ack(nodeAddr[n], testMSG.encode('UTF-8'), timeout) 
@@ -75,9 +79,10 @@ def doNetDiscovery(nm, nodeAddr):
                 
     # Return the list of propagation delays
     return propDelays, linkQuality
-    
+
+
 ### Function that performs dual-hop network discovery after direct nodes have been found
-def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshold):
+def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshold, wdt=None):
     
     # Initialize the lists of dual-hop nodes, their propagation delays and relays
     dhNodes = [False]*len(nodeAddr)
@@ -106,6 +111,10 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
             maxTries = 5
             reqReceived = False
             for k in range(maxTries):
+
+                # Feed the watchdog
+                if wdt:
+                    wdt.feed()
         
                 # Send the packet
                 print("Sending the network discovery request to N" + "%03d" % nodeAddr[n])
@@ -125,7 +134,11 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                 netDiscTimeout = 120000
                 timerStart = utime.ticks_ms()
                 while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
-                
+
+                    # Feed the watchdog
+                    if wdt:
+                        wdt.feed()
+
                     # Check if a packet has been received
                     nm.poll_receiver()
                     nm.process_incoming_buffer()
@@ -174,7 +187,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
     return dhPropDelays, dhNodes, dhRelays, dhLQ
     
 ### Function to send TDI packets to all connected nodes, return updated list of connected nodes
-def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes):
+def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes, wdt=None):
     
     maxTries = 3    # maximum number of tries to receive ACK from node
     timeout = 5000  # ACK timeout 5 seconds 
@@ -186,6 +199,10 @@ def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes):
                 
             # Try sending the TDI packet multiple times if needed
             for k in range(maxTries):
+
+                # Feed the watchdog
+                if wdt:
+                    wdt.feed()
                 
                 # Send unicast TDI packet that requires an ACK
                 print("Sending TDI to N" + "%03d" % nodeAddr[n] + "...")
@@ -199,7 +216,11 @@ def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes):
                 timerStart = utime.ticks_ms()
                 ackReceived = False
                 while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, timeout)) < 0:
-                
+
+                    # Feed the watchdog
+                    if wdt:
+                        wdt.feed()
+
                     # Check if a packet has been received
                     nm.poll_receiver()
                     nm.process_incoming_buffer()
@@ -226,7 +247,7 @@ def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes):
     return deliverySuccess
     
 ### Function to send TDI packets to dual-hop nodes of a given relay branch
-def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength):
+def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength, wdt=None):
     
     maxTries = 5        # maximum number of tries to receive ACK from the node
     timeout1Hop = 5.0   # single hop timeout 5 seconds  
@@ -236,7 +257,11 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength):
             
         # Try sending the TDI packet multiple times if needed
         for k in range(maxTries):
-            
+
+            # Feed the watchdog
+            if wdt:
+                wdt.feed()
+
             # Send unicast TDI packet that requires an ACK
             print("Sending TDI to N" + "%03d" % nodeAddr[n] + " via N" + "%03d" % relayAddr + "...")
             
@@ -256,7 +281,11 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength):
         timeout2Hops = 40000 # dual hop timeout 40 seconds
         timerStart = utime.ticks_ms()
         while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, timeout2Hops)) < 0:
-        
+
+            # Feed the watchdog
+            if wdt:
+                wdt.feed()
+
             # Check if a packet has been received
             nm.poll_receiver()
             nm.process_incoming_buffer()
@@ -292,7 +321,7 @@ def sendBroadcastREQ(nm, dataType, reqIndex, timeTillNextFrame, canGoToSleep, no
     pyb.delay(reqPktDur) 
     
 ### Function to transmit a single Unicast REQ packet
-def sendUnicastREQ(nm, dataType, reqIndex, thisNode, destNode, canGoToSleep, nodeAddr):
+def sendUnicastREQ(nm, dataType, reqIndex, thisNode, destNode, canGoToSleep, nodeAddr, wdt=None):
     
     # Generate the REQ packet bytes
     sleepFlag = struct.pack('B', 1) if (canGoToSleep) else struct.pack('B', 0)
@@ -306,6 +335,11 @@ def sendUnicastREQ(nm, dataType, reqIndex, thisNode, destNode, canGoToSleep, nod
     numTries = 3
     timeout = 5.0
     for n in range(numTries):
+
+        # Feed the watchdog
+        if wdt:
+            wdt.feed()
+
         delay = nm.send_unicast_message_with_ack(destNode, reqPacket, timeout)
         if delay > 0:
             break
