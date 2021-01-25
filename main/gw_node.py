@@ -283,7 +283,7 @@ class NetProtocol:
                 # Add a delay before checking the serial port again     
                 pyb.delay(25)
                 
-            # If there are more nodes that need to respond, move on having transmitted an empty REQ
+            # If there are more nodes that need to respond, move on
             if not nodesToRespond:
                 break
                 
@@ -313,7 +313,7 @@ class NetProtocol:
                 timeout = 60000 # minute total timeout for the relay to start responding
                 firstToLastTimeout= len(nodesToRespond)*2000 # timeout in sec = 2 x number of expected packets
                 timeoutReached = False
-                while not timeoutReached:
+                while (not timeoutReached) and nodesToRespond:
                         
                     # If there is a packet received, process it
                     self.nm.poll_receiver()
