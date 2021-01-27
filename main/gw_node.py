@@ -137,7 +137,7 @@ class NetProtocol:
             # If any dual-hop connections have a lower/same link quality than the single-hop connection, choose single-hop
             for n in range(numNodes):
                 if not self.shNodes[n]:
-                    self.shNodes[n] = (shlq[n] >= dhlq[n])
+                    self.shNodes[n] = (shlq[n] > 0) and (shlq[n] >= dhlq[n])
                     
         # Create the list of directly connected node addresses
         self.shNodeAddr = list()

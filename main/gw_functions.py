@@ -175,7 +175,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
             # Update the list of unconnected nodes (with the link quality below threshold)
             uncNodeAddr = list()
             for k in range(len(nodeAddr)):
-                if not (dhLQ[k] < lqThreshold):
+                if (not directNodes[k]) and (dhLQ[k] < lqThreshold):
                     uncNodeAddr.append(nodeAddr[k])
                     
             # If all nodes are connected, finish the network discovery
