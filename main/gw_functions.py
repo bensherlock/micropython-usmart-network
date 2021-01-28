@@ -41,6 +41,7 @@ dataPktDur = round(105 + (64+16) * 12.5) # max 64-byte data packet duration
 reqPktDur = round(105 + (64+16) * 12.5) # REQ packet duration (max 64 bytes)
 tdiPktDur = round(105 + (14+16) * 12.5) # TDI packet duration
 ackPktDur = round(105 + (5+16) * 12.5) # ACK packet
+initGuardInt = 200 # 200 ms guard interval for network discovery and setup transmissions
 
 ### Function that performs initial network discovery
 def doNetDiscovery(nm, nodeAddr, wdt=None):
@@ -51,7 +52,7 @@ def doNetDiscovery(nm, nodeAddr, wdt=None):
     testMSG = "USMART Network Discovery"
 
     # Loop through every node, send multiple test messages to it, and note the propagation delays
-    propDelays = [1e9]*len(nodeAddr) # propagation delays (huge value by default)
+    propDelays = [1000000000]*len(nodeAddr) # propagation delays (huge value by default)
     linkQuality = [0]*len(nodeAddr) # link quality is represented by the number of successful test message exchanges
     for n in range(len(nodeAddr)):
          
@@ -76,6 +77,8 @@ def doNetDiscovery(nm, nodeAddr, wdt=None):
             # Otherwise, if there was no response, display a message
             else:
                 print("  No response received")
+            # Add guard interval before next transmission
+            pyb.delay(initGuardInt)
                 
     # Return the list of propagation delays
     return propDelays, linkQuality
@@ -170,6 +173,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                                     
                             # Print message and log it
                             print("  Node discovery results received from N" + "%03d" % nodeAddr[n]) 
+                            pyb.delay(initGuardInt)
                             break               
                 
             # Update the list of unconnected nodes (with the link quality below threshold)
@@ -241,6 +245,7 @@ def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes, wdt=No
                             
                 # If the ACK was received, move on to next node
                 if ackReceived:
+                    pyb.delay(initGuardInt)
                     break
                     
     # Return the delivery success
@@ -273,6 +278,7 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength, wd
             # Check if the ACK was received
             if response > 0:                    
                 print("  ACK received from relay")
+                pyb.delay(initGuardInt)
                 break # success, move on
             else:
                 print("  No ACK") # try again
@@ -300,7 +306,8 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength, wd
                     if payload[3:4] == b'A':
                         print("  Dual-hop TDI ACK received")
                     elif payload[3:4] == b'N':
-                        print("  Dual-hop TDI NACK received") 
+                        print("  Dual-hop TDI NACK received")
+                    pyb.delay(initGuardInt)
                     break
                     
 ### Function to transmit a single broadcast REQ packet
@@ -362,7 +369,7 @@ def calcTDAMACSchedule(propDelays, connNodes, guardInt):
         if (n==0):
             txDelays[sInd[n]] = minDelay
         
-        # Leave transmit delay of first node and all unconnected nodes at zero
+        # Calculate transmit delays for all other nodes
         if (n > 0) and connNodes[sInd[n]]:
             
             # Calculate the transmit delay
@@ -373,5 +380,5 @@ def calcTDAMACSchedule(propDelays, connNodes, guardInt):
     # Calculate the overall frame length of the TDA-MAC scchedule
     frameLength = max([2*propDelays[n] + txDelays[n] for n in range(numNodes) if propDelays[n] < 1e8]) + dataPktDur + reqPktDur + guardInt
             
-    # Return the transmit delay list
+    # Return the transmit delay list and the frame length
     return txDelays, frameLength
