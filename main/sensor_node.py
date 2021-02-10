@@ -75,18 +75,26 @@ class NetProtocol:
         self.nm = modem
         self.sensor = sensor_payload
         self.wdt = wdt
-        
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Query this node's address and display it
-        addr = -1
-        while addr == -1:
-            addr = modem.get_address()
+        # addr = -1
+        # while addr == -1: # This would lock up permanently.
+        addr = modem.get_address()
         print("  This node's address: " + '%03d' % addr)
-        self.thisNode = addr # save the node's address
-        
+        self.thisNode = addr  # save the node's address
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Query this node's battery voltage and display it
-        voltage = -1
-        while voltage == -1:
-            voltage = modem.get_battery_voltage()
+        # voltage = -1
+        # while voltage == -1: # This would lock up permanently.
+        voltage = modem.get_battery_voltage()
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print(" ")
             
