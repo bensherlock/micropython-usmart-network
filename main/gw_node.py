@@ -72,27 +72,39 @@ class NetProtocol:
         self.dhPropDelays = None
         self.dhRelays = None
         self.sfLengths = None
+
+        self.wdt = None  # WDT passed from mainloop to be fed during longer loops.
            
     #########################    
     # Initialisation method #
     ######################### 
-    def init(self, modem, node_addr):
+    def init(self, modem, node_addr, wdt=None):
         
         # Store a reference to the modem object the list of sensor node addresses
         self.nm = modem
         self.nodeAddr = node_addr.copy()
         self.relayLoads = [0]*len(self.nodeAddr)
+        self.wdt = wdt
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
 
         # Store this node's address and check the battery voltage
         print('Initializing the gateway node...')
-        thisNode = -1
-        while thisNode == -1:
-            thisNode = self.nm.get_address()
+        #thisNode = -1
+        #while thisNode == -1: # This would lock up permanently.
+        thisNode = self.nm.get_address()
         print("  This node's address: " + '%03d' % thisNode)
         self.thisNode = thisNode
-        voltage = -1
-        while voltage == -1:
-            voltage = self.nm.get_battery_voltage()
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
+        #voltage = -1
+        #while voltage == -1: # This would lock up permanently.
+        voltage = self.nm.get_battery_voltage()
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print("")
         
@@ -100,10 +112,14 @@ class NetProtocol:
     # Method to perform network discovery #
     ####################################### 
     def do_net_discovery(self):
-        
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
-        (self.shPropDelays, shlq) = gwf.doNetDiscovery(self.nm, self.nodeAddr)
+        (self.shPropDelays, shlq) = gwf.doNetDiscovery(self.nm, self.nodeAddr, self.wdt)
         
         # If there are no nodes connected at all, display a message and exit the function
         if all(lq == 0 for lq in shlq):
@@ -128,11 +144,15 @@ class NetProtocol:
         
         # If not all nodes are connected, and if dual-hop TDA-MAC is used, continue network discovery and setup
         if (not all(self.shNodes)) and self.dualHop:
-            
+
+            # Feed the watchdog
+            if self.wdt:
+                self.wdt.feed()
+
             # Dual-hop network discovery stage
             print("*** Dual-hop network discovery ***")
             (self.dhPropDelays, self.dhNodes, self.dhRelays, dhlq) = \
-                gwf.do2HNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.shNodes, self.relayLoads, self.lqThreshold)
+                gwf.do2HNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.shNodes, self.relayLoads, self.lqThreshold, self.wdt)
                                                         
             # If any dual-hop connections have a lower/same link quality than the single-hop connection, choose single-hop
             for n in range(numNodes):
@@ -144,7 +164,11 @@ class NetProtocol:
         for n in range(len(self.nodeAddr)):
             if self.shNodes[n]:
                 self.shNodeAddr.append(self.nodeAddr[n])
-                
+
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Print out the discovered network topology
         print('')
         print("*** Network Topology ***")
@@ -175,8 +199,12 @@ class NetProtocol:
         self.guardInt = guard_int
         (shTxDelays, self.shFrameLength) = gwf.calcTDAMACSchedule(self.shPropDelays, self.shNodes, self.guardInt)
 
+        # Feed the watchdog
+        if self.wdt:
+            self.wdt.feed()
+
         # Distribute transmit delay instructions to all direct nodes
-        gwf.sendTDIPackets(self.nm, self.thisNode, self.nodeAddr, shTxDelays, 0, self.shNodes)
+        gwf.sendTDIPackets(self.nm, self.thisNode, self.nodeAddr, shTxDelays, 0, self.shNodes, self.wdt)
         
         # Save the single-hop transmit delays into a new list
         self.txDelays = shTxDelays.copy()
@@ -204,11 +232,15 @@ class NetProtocol:
                         
                 # Record the load of this relay node in this network cycle
                 self.relayLoads[self.nodeAddr.index(self.relayAddr[n])] += len(childNodeAddr)
-                        
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Calculate the TDA-MAC schedule
                 (txDelays, self.sfLengths[n]) = gwf.calcTDAMACSchedule(propDelays, [True]*len(propDelays), self.guardInt)   
                 # Distribute TDI packets to all dual-hop nodes
-                gwf.send2HopTDIPackets(self.nm, self.thisNode, self.relayAddr[n], childNodeAddr, txDelays, self.sfLengths[n])
+                gwf.send2HopTDIPackets(self.nm, self.thisNode, self.relayAddr[n], childNodeAddr, txDelays, self.sfLengths[n], self.wdt)
                 
                 # Note the transmit delay for each child node
                 for a in childNodeAddr:
@@ -251,18 +283,26 @@ class NetProtocol:
         nodesToRespond = self.shNodeAddr.copy()
         maxNumREQs = 3
         for reqIndex in range(maxNumREQs):
-        
+
+            # Feed the watchdog
+            if self.wdt:
+                self.wdt.feed()
+
             # Transmit broadcast REQ
             canGoToSleep = True # allow the nodes to go to sleep between frames
             ttnf = time_till_next_frame - utime.ticks_diff(utime.ticks_ms(), frameStartTime)
             print("Sending Broadcast REQ...")
             reqTime = utime.ticks_ms()
-            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, not stay_awake, nodesToRespond)
+            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, not stay_awake, nodesToRespond, self.wdt)
                 
             # Start a polling loop receiving the data packets
             singleHopTimeout = self.shFrameLength + self.guardInt
             while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(reqTime, singleHopTimeout)) < 0:
-                    
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # If there is a packet received, process it
                 self.nm.poll_receiver()
                 self.nm.process_incoming_buffer()
@@ -301,11 +341,15 @@ class NetProtocol:
                     
             # Request data from the relay node multiple times if needed (to allow retransmissions)
             for reqIndex in range(maxNumREQs):
-                        
+
+                # Feed the watchdog
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Transmit a unicast REQ to the relay node
                 print("Sending Unicast REQ to N" + "%03d" % r + "...")
                 reqTime = utime.ticks_ms()
-                gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond)
+                gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
                 
                 # Enter a loop listening for data packets
                 # Once the first packet was received, the rest should follow in a "train"
@@ -314,7 +358,11 @@ class NetProtocol:
                 firstToLastTimeout= len(nodesToRespond)*2000 # timeout in sec = 2 x number of expected packets
                 timeoutReached = False
                 while (not timeoutReached) and nodesToRespond:
-                        
+
+                    # Feed the watchdog
+                    if self.wdt:
+                        self.wdt.feed()
+
                     # If there is a packet received, process it
                     self.nm.poll_receiver()
                     self.nm.process_incoming_buffer()
@@ -366,7 +414,11 @@ class NetProtocol:
         numREQCopies = 3
         interval = 2000 # 2 second intervals between REQ copies
         for n in range(numREQCopies):
-        
+
+            # Feed the watchdog
+            if self.wdt:
+                self.wdt.feed()
+
             # Transmit blank broadcast REQ
             ttnf = time_till_next_tx - utime.ticks_diff(utime.ticks_ms(), initTime)
             print("Sending Blank Broadcast REQ...")
@@ -378,6 +430,11 @@ class NetProtocol:
         # Loop through each relay node and send a blacnk unicast REQ to them (to reach their child nodes) 
         interval = 7000
         for r in self.relayAddr:
+
+            # Feed the watchdog
+            if self.wdt:
+                self.wdt.feed()
+
             print("Sending Blank Unicast REQ to N" + "%03d" % r)
-            gwf.sendUnicastREQ(self.nm, "S", 1, self.thisNode, r, True, [])
+            gwf.sendUnicastREQ(self.nm, "S", 1, self.thisNode, r, True, [], self.wdt)
             pyb.delay(interval)
