@@ -364,7 +364,7 @@ class NetProtocol:
                 # Once the first packet was received, the rest should follow in a "train"
                 firstPacketReceived = False
                 timeout = 60000 # minute total timeout for the relay to start responding
-                firstToLastTimeout= len(nodesToRespond)*2000 # timeout in sec = 2 x number of expected packets
+                firstToLastTimeout= len(nodesToRespond)*(gwf.dataPktDur + self.guardInt) # timeout once I start receiving packets
                 timeoutReached = False
                 while (not timeoutReached) and nodesToRespond:
 

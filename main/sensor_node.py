@@ -377,7 +377,7 @@ class NetProtocol:
         
             # Try gathering the data from all child nodes
             packetBuffer = list()
-            nodesToRespond = self.childNodes.copy()
+            nodesToRespond = destAddr.copy()
             numRetries = 3
             for n in range(1, numRetries+1):
 
@@ -487,7 +487,7 @@ class NetProtocol:
                             for n in range(7, len(payload)):
                                 addr = struct.unpack('B', payload[n:n+1])[0]
                                 destAddr.append(int(addr))
-                                # If it is a REQ, process it by calling this function again
+                                # Transmit the missing packets again (by staying in this loop)
                         # Otherwise, pass it up to the main packet handling function
                         else:
                             canGoToSleep = self.handle_packet(packet)[0]
