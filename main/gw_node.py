@@ -343,6 +343,7 @@ class NetProtocol:
         for r in self.relayAddr:
 
             # Establish the set of nodes that are expected to respond (the child nodes for this relay)
+            propDelay = shPropDelays[self.nodeAddr.index(r)]
             nodesToRespond = list()
             for k in range(len(self.nodeAddr)):
                 if self.dhRelays[k] == r:
