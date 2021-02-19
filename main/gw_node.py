@@ -59,7 +59,7 @@ class NetProtocol:
     
     # Constructor method including the initialization code
     def __init__(self):
-        
+
         # Static parameters
         self.thisNode = -1          # node address to be queried from the nanomomodem
         self.relayLoads = None      # a running record of relay loads on each node (to even it out long term)
@@ -73,7 +73,16 @@ class NetProtocol:
         self.dhRelays = None
         self.sfLengths = None
 
+        # Empty variables assigned in init() but referred to in json
+        self.nm = None
+        self.nodeAddr = None
         self.wdt = None  # WDT passed from mainloop to be fed during longer loops.
+
+        # Other network variables assigned later but used in json
+        self.shNodes = None
+        self.shPropDelays = None
+        self.lq = None
+        self.txDelays = None
            
     #########################    
     # Initialisation method #
@@ -293,7 +302,7 @@ class NetProtocol:
             ttnf = time_till_next_frame - utime.ticks_diff(utime.ticks_ms(), frameStartTime)
             print("Sending Broadcast REQ...")
             reqTime = utime.ticks_ms()
-            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, not stay_awake, nodesToRespond, self.wdt)
+            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, not stay_awake, nodesToRespond)
                 
             # Start a polling loop receiving the data packets
             singleHopTimeout = self.shFrameLength + self.guardInt
