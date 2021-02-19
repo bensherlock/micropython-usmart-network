@@ -141,9 +141,10 @@ class NetProtocol:
             pass
             
         # If the current frame is over, node can go to sleep until the start of the next frame
-        ttnf = 0
-        if canGoToSleep:
-            ttnf = self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp)   
+        #ttnf = 0
+        #if canGoToSleep:
+        # Changed to always return the time to next frame
+        ttnf = self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp)
         return (canGoToSleep, ttnf)
     
     ##################################################################
