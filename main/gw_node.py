@@ -352,6 +352,7 @@ class NetProtocol:
             # Request data from the relay node multiple times if needed (to allow retransmissions)
             sdtInitiated = False
             sdtTimeout = 60000 # minute total timeout for the relay to initiate data transfer
+            noResponseFromRelay = False
             for reqIndex in range(maxNumREQs):
 
                 # Feed the watchdog
@@ -402,6 +403,7 @@ class NetProtocol:
                             
                     # Check if the timeout is reached
                     if (not sdtInitiated) and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(reqTime, sdtTimeout)) > 0:
+                        noResponseFromRelay = True
                         timeoutReached = True
                     if sdtInitiated and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sdtTime, dtTimeout)) > 0:
                         timeoutReached = True
@@ -409,8 +411,8 @@ class NetProtocol:
                     # Add a delay before checking the serial port again     
                     pyb.delay(25)
                             
-                # If there are more nodes that need to respond, move on
-                if not nodesToRespond:
+                # If there is no response from relay after 60 sec, or all data has been gathered, move on
+                if noResponseFromRelay or (not nodesToRespond):
                     break  
                     
         print("")
