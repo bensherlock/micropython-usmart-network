@@ -350,6 +350,9 @@ def sendUnicastREQ(nm, dataType, reqIndex, thisNode, destNode, canGoToSleep, nod
         delay = nm.send_unicast_message_with_ack(destNode, reqPacket, timeout)
         if delay > 0:
             break
+            
+    # Return a binary flag indicating whether an ACK was received
+    return (delay > 0)
 
 ### Function to calculate TDA-MAC transmit delays
 def calcTDAMACSchedule(propDelays, connNodes, guardInt):
