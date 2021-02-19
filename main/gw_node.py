@@ -349,6 +349,8 @@ class NetProtocol:
                     nodesToRespond.append(self.nodeAddr[k])
                     
             # Request data from the relay node multiple times if needed (to allow retransmissions)
+            sdtInitiated = False
+            sdtTimeout = 60000 # minute total timeout for the relay to initiate data transfer
             for reqIndex in range(maxNumREQs):
 
                 # Feed the watchdog
@@ -358,15 +360,16 @@ class NetProtocol:
                 # Transmit a unicast REQ to the relay node
                 print("Sending Unicast REQ to N" + "%03d" % r + "...")
                 reqTime = utime.ticks_ms()
-                gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
+                ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
                 
-                # Enter a loop listening for data packets
-                # Once the first packet was received, the rest should follow in a "train"
-                firstPacketReceived = False
-                timeout = 60000 # minute total timeout for the relay to start responding
-                firstToLastTimeout= len(nodesToRespond)*(gwf.dataPktDur + self.guardInt) # timeout once I start receiving packets
+                # Once the SDT handshake was received, the packets should follow in a "train"          
+                dtTimeout= 2*propDelay + self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
                 timeoutReached = False
-                while (not timeoutReached) and nodesToRespond:
+                # If this is a retransmission REQ, reset the data transfer time window
+                if reqIndex > 0:
+                    sdtTime = utime.ticks_ms()
+                # Enter a loop listening for data packets
+                while ureqAcked and nodesToRespond and (not timeoutReached):
 
                     # Feed the watchdog
                     if self.wdt:
@@ -376,27 +379,30 @@ class NetProtocol:
                     self.nm.poll_receiver()
                     self.nm.process_incoming_buffer()
                     if self.nm.has_received_packet():             
-                        # Read the incoming data packet
+                        # Read the incoming packet
                         packet = self.nm.get_received_packet()   
                         packetType = packet.packet_type
                         payload = bytes(packet.packet_payload)
-                        if (packetType == 'U') and (payload[0:3] == b'UND'):
+                        # SDT handshake packet
+                        if (packetType == 'U') and (payload[0:5] == b'UNSDT'):
+                            print("  Data transfer initiated by the relay...")
+                            sdtInitiated = True
+                            sdtTime = utime.ticks_ms() 
+                        # Data packet
+                        elif (packetType == 'U') and (payload[0:3] == b'UND'):
                             # Process the packet
                             # Store the packet and decode the packet source
                             rxPackets.append(packet)
                             src = struct.unpack('B', payload[3:4])[0]     
-                            print("  Packet received from N" + "%03d" % src + ": " + str(payload)) 
-                            if not firstPacketReceived:
-                                firstPacketReceived = True
-                                firstRxTime = utime.ticks_ms()                
+                            print("  Packet received from N" + "%03d" % src + ": " + str(payload))               
                             # Remove this node from the list of nodes expected to respond
                             if src in nodesToRespond:
                                 nodesToRespond.remove(src)
                             
                     # Check if the timeout is reached
-                    if (not firstPacketReceived) and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(reqTime, timeout)) > 0:
+                    if (not sdtInitiated) and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(reqTime, sdtTimeout)) > 0:
                         timeoutReached = True
-                    if firstPacketReceived and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(firstRxTime, firstToLastTimeout)) > 0:
+                    if sdtInitiated and utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sdtTime, dtTimeout)) > 0:
                         timeoutReached = True
                             
                     # Add a delay before checking the serial port again     

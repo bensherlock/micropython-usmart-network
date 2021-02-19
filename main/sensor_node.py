@@ -419,11 +419,27 @@ class NetProtocol:
                 # If there are no more child nodes to gather data from, do not transmit a REQ again
                 if not nodesToRespond:
                     break
+                    
+            # Transmit a START DATA TRANSFER handshake packet to the gateway and wait for an ACK
+            numTries = 5
+            timeout = 5.0
+            gwReady = False
+            for n in range(numTries):
+                # Feed the watchdog
+                if wdt:
+                    wdt.feed()  
+                # Transmit a short handshake packet "UNSDT", if ACK is received, proceed with data transfer
+                print("Contacting GW to initiate data transfer...")
+                delay = nm.send_unicast_message_with_ack(srcNode, b'UNSDT', timeout)
+                if delay > 0:
+                    print("  GW is ready to receive")
+                    gwReady = True
+                    break
                 
             # Forward all payload packets in the buffer to the node that requested it
             # Wait for a Repeated REQ in case retransmissions are required
             frameIsOver = False
-            while (not frameIsOver):
+            while gwReady and (not frameIsOver):
             
                 # Forward the packets 
                 for fwPacket in packetBuffer:
