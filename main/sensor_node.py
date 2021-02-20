@@ -425,9 +425,11 @@ class NetProtocol:
             timeout = 5.0
             gwReady = False
             for n in range(numTries):
+
                 # Feed the watchdog
-                if wdt:
-                    wdt.feed()  
+                if self.wdt:
+                    self.wdt.feed()
+
                 # Transmit a short handshake packet "UNSDT", if ACK is received, proceed with data transfer
                 print("Contacting GW to initiate data transfer...")
                 delay = nm.send_unicast_message_with_ack(srcNode, b'UNSDT', timeout)
