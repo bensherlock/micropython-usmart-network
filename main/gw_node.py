@@ -101,9 +101,13 @@ class NetProtocol:
 
         # Store this node's address and check the battery voltage
         print('Initializing the gateway node...')
-        #thisNode = -1
-        #while thisNode == -1: # This would lock up permanently.
-        thisNode = self.nm.get_address()
+        retry_count = 0
+        thisNode = -1
+        while thisNode == -1 and retry_count < 3:
+            thisNode = self.nm.get_address()
+            retry_count = retry_count + 1
+            utime.sleep_ms(100)
+
         print("  This node's address: " + '%03d' % thisNode)
         self.thisNode = thisNode
 
@@ -111,9 +115,13 @@ class NetProtocol:
         if self.wdt:
             self.wdt.feed()
 
-        #voltage = -1
-        #while voltage == -1: # This would lock up permanently.
-        voltage = self.nm.get_battery_voltage()
+        retry_count = 0
+        voltage = -1
+        while voltage == -1 and retry_count < 3:
+            voltage = self.nm.get_battery_voltage()
+            retry_count = retry_count + 1
+            utime.sleep_ms(100)
+
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print("")
         

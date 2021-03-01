@@ -81,9 +81,13 @@ class NetProtocol:
             self.wdt.feed()
 
         # Query this node's address and display it
-        # addr = -1
-        # while addr == -1: # This would lock up permanently.
-        addr = modem.get_address()
+        retry_count = 0
+        addr = -1
+        while addr == -1 and retry_count < 3:
+            addr = modem.get_address()
+            retry_count = retry_count + 1
+            utime.sleep_ms(100)
+
         print("  This node's address: " + '%03d' % addr)
         self.thisNode = addr  # save the node's address
 
@@ -92,9 +96,13 @@ class NetProtocol:
             self.wdt.feed()
 
         # Query this node's battery voltage and display it
-        # voltage = -1
-        # while voltage == -1: # This would lock up permanently.
-        voltage = modem.get_battery_voltage()
+        retry_count = 0
+        voltage = -1
+        while voltage == -1 and retry_count < 3:
+            voltage = modem.get_battery_voltage()
+            retry_count = retry_count + 1
+            utime.sleep_ms(100)
+
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print(" ")
             
