@@ -440,7 +440,7 @@ class NetProtocol:
 
                 # Transmit a short handshake packet "UNSDT", if ACK is received, proceed with data transfer
                 print("Contacting GW to initiate data transfer...")
-                delay = nm.send_unicast_message_with_ack(srcNode, b'UNSDT', timeout)
+                delay = self.nm.send_unicast_message_with_ack(srcNode, b'UNSDT', timeout)
                 if delay > 0:
                     print("  GW is ready to receive")
                     gwReady = True
@@ -534,13 +534,13 @@ class NetProtocol:
         # Read the source address formatted as three characters
         srcAddr = int(bytes(payload[8:11]).decode())        
         # Print message for debugging
-        print("Diagnostic packet received from Node " + str(srcAddr));  
+        print("Diagnostic packet received from Node " + str(srcAddr))
         # Convert own address to a three character string
         addrString = "%03d" % self.thisNode
         
         # Transmit a response
         txBytes = b'Yes!' + addrString.encode()
-        nm.send_unicast_message(srcAddr, txBytes)
+        self.nm.send_unicast_message(srcAddr, txBytes)
     
     ##############################################################################################  
     ### Function to deliver the network discovery results back to the node that requested them ###
