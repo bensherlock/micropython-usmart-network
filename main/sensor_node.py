@@ -130,8 +130,11 @@ class NetProtocol:
         if self.wdt:
             self.wdt.feed()
 
+        # Network discovery test message
+        if (pktType == 'U') and (len(payload) > 7) and (payload[0:6] == b'UNNDTX'):
+            self.dealWithTestTx(payload)
         # Network discovery request packet
-        if (pktType == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNN?'):
+        elif (pktType == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNN?'):
             self.dealWithNetDiscReq(payload)
         # TDI packet unicast to this node
         elif (pktType == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNI!'):
@@ -152,18 +155,33 @@ class NetProtocol:
         ttnf = self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp)
         return (canGoToSleep, ttnf)
     
+    #####################################################################
+    ### Function to deal with the network discovery test transmission ###
+    #####################################################################
+    def dealWithTestTx(self, payload):
+    
+        # Parse the source address
+        srcNode = struct.unpack('B', payload[6:7])[0]    
+        print('Test message received from Node ' + str(srcNode))
+        
+        # Wait a short guard interval and send a response
+        pyb.delay(self.guardInt)
+        response = b'UNNDRX' + struct.pack('B', int(self.thisNode)) + b'USMART_Test_Transmission_Response'
+        print("  Sending test message response...") 
+        self.nm.send_unicast_message(srcNode, response) 
+    
     ##################################################################
     ### Function to deal with the network discovery request packet ###
     ##################################################################
     def dealWithNetDiscReq(self, payload):
         
-        # Parse the source address (make sure it is three characters)
+        # Parse the source address
         srcNode = struct.unpack('B', payload[4:5])[0]
             
         # Parse the list of nodes that need to be discovered
         nodeList = list()
         for n in range(len(payload)-5):
-            # Parse the address, make sure it is 3 characters
+            # Parse the address
             addr = struct.unpack('B', payload[5+n:6+n])[0]
             # Append the address to the list 
             nodeList.append(addr)
@@ -172,7 +190,7 @@ class NetProtocol:
         print('Node discovery request received from Node ' + str(srcNode))
             
         # Perform network discovery
-        (propDelays, linkQuality) = gwf.doNetDiscovery(self.nm, nodeList, self.wdt)
+        (propDelays, linkQuality) = gwf.doNetDiscovery(self.nm, self.thisNode, nodeList, self.wdt)
             
         # Send the node discovery results packet to the requesting node
         self.sendNodeDiscPacket(srcNode, propDelays, linkQuality)

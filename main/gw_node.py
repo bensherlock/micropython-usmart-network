@@ -92,7 +92,8 @@ class NetProtocol:
         # Store a reference to the modem object the list of sensor node addresses
         self.nm = modem
         self.nodeAddr = node_addr.copy()
-        self.relayLoads = [0]*len(self.nodeAddr)
+        if not self.relayLoads:
+            self.relayLoads = [0]*len(self.nodeAddr)
         self.wdt = wdt
 
         # Feed the watchdog
@@ -136,7 +137,8 @@ class NetProtocol:
 
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
-        (self.shPropDelays, shlq) = gwf.doNetDiscovery(self.nm, self.nodeAddr, self.wdt)
+        (self.shPropDelays, shlq) = gwf.doNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.wdt)
+        pyb.delay(self.guardInt)
         
         # If there are no nodes connected at all, display a message and exit the function
         if all(lq == 0 for lq in shlq):
@@ -170,11 +172,16 @@ class NetProtocol:
             print("*** Dual-hop network discovery ***")
             (self.dhPropDelays, self.dhNodes, self.dhRelays, dhlq) = \
                 gwf.do2HNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.shNodes, self.relayLoads, self.lqThreshold, self.wdt)
+            pyb.delay(self.guardInt)
                                                         
             # If any dual-hop connections have a lower/same link quality than the single-hop connection, choose single-hop
             for n in range(numNodes):
-                if not self.shNodes[n]:
-                    self.shNodes[n] = (shlq[n] > 0) and (shlq[n] >= dhlq[n])
+                if (shlq[n] > 0) and (shlq[n] >= dhlq[n]):
+                    self.shNodes[n] = True
+                    self.dhNodes[n] = False
+                    self.dhRelays[n] = -1
+                    self.dhPropDelays[n] = 1000000
+                    dhlq[n] = 0
                     
         # Create the list of directly connected node addresses
         self.shNodeAddr = list()
@@ -197,7 +204,7 @@ class NetProtocol:
                         '%d' % round(self.shPropDelays[n]*1.5)  + 'm, LQ - ' + str(shlq[n]))
             elif self.dhNodes[n]:
                 self.lq[n] = dhlq[n]
-                print("N" + "%03d" % self.nodeAddr[n] + " direct: distance to relay - " + \
+                print("N" + "%03d" % self.nodeAddr[n] + " via N" + "%03d" % self.dhRelays[n] + ": distance to relay - " + \
                         '%d' % round(self.dhPropDelays[n]*1.5)  + 'm, LQ - ' + str(dhlq[n]))
             else:
                 print("N" + "%03d" % self.nodeAddr[n] + ": not connected")
@@ -215,6 +222,7 @@ class NetProtocol:
         print("*** Network setup ***")
         self.guardInt = guard_int
         (shTxDelays, self.shFrameLength) = gwf.calcTDAMACSchedule(self.shPropDelays, self.shNodes, self.guardInt)
+        pyb.delay(self.guardInt)
 
         # Feed the watchdog
         if self.wdt:
@@ -258,6 +266,7 @@ class NetProtocol:
                 (txDelays, self.sfLengths[n]) = gwf.calcTDAMACSchedule(propDelays, [True]*len(propDelays), self.guardInt)   
                 # Distribute TDI packets to all dual-hop nodes
                 gwf.send2HopTDIPackets(self.nm, self.thisNode, self.relayAddr[n], childNodeAddr, txDelays, self.sfLengths[n], self.wdt)
+                pyb.delay(self.guardInt)
                 
                 # Note the transmit delay for each child node
                 for a in childNodeAddr:
@@ -370,10 +379,13 @@ class NetProtocol:
                 # Transmit a unicast REQ to the relay node
                 print("Sending Unicast REQ to N" + "%03d" % r + "...")
                 reqTime = utime.ticks_ms()
-                ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
+                try:
+                    ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
+                except Exception as e:
+                    print("Error on l. 383 in gw_node.py: " + str(e))
                 
                 # Once the SDT handshake was received, the packets should follow in a "train"          
-                dtTimeout= 2*propDelay + self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
+                dtTimeout= 2*propDelay + 2*self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
                 timeoutReached = False
                 # If this is a retransmission REQ, reset the data transfer time window
                 if reqIndex > 0:

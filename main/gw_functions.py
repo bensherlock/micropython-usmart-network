@@ -44,41 +44,81 @@ ackPktDur = round(105 + (5+16) * 12.5) # ACK packet
 initGuardInt = 200 # 200 ms guard interval for network discovery and setup transmissions
 
 ### Function that performs initial network discovery
-def doNetDiscovery(nm, nodeAddr, wdt=None):
+def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
 
     # Function parameters
-    numTestTx = 5 # Number of test transmissions for each node
-    timeout = 5.0 # 5 second timeout
-    testMSG = "USMART Network Discovery"
+    numTestTx = 5    # Number of test transmissions for each node
+    timeout = 5.0    # 5 second timeout
+    timeoutms = 5000 # timeout in milliseconds
+    
+    # Define the test transmission payload
+    testMSG = b'UNNDTX' + struct.pack('B', int(thisNode)) + b'USMART_Test_Transmission'
 
     # Loop through every node, send multiple test messages to it, and note the propagation delays
-    propDelays = [1000000000]*len(nodeAddr) # propagation delays (huge value by default)
+    propDelays = [1000000]*len(nodeAddr) # propagation delays (huge value by default)
     linkQuality = [0]*len(nodeAddr) # link quality is represented by the number of successful test message exchanges
     for n in range(len(nodeAddr)):
-         
-        # Send a test message to the node and parse the response
+    
+        # Try pinging this node to measure the propagation delay
         for k in range(numTestTx):
 
             # Feed the watchdog
             if wdt:
                 wdt.feed()
-
-            # Ping the node
-            print("Sending test MSG to N" + "%03d" % nodeAddr[n] + "...")
-            delay = nm.send_unicast_message_with_ack(nodeAddr[n], testMSG.encode('UTF-8'), timeout) 
             
-            # If a response was received, store it, increment the link quality and log it
-            if delay > 0:
-                # Save the propagation delay and increment the link quality
+            # Send a ping and wait for a repsponse  
+            print("Pinging N" + "%03d" % nodeAddr[n] + "...")          
+            delay = nm.send_ping(nodeAddr[n], timeout)
+            pingSuccess = (delay > 0)
+            # If a response was received, note the propagation delay and move on to link tests
+            if pingSuccess:
                 propDelays[n] = round(delay*1e3) # msec
-                linkQuality[n] += 1
-                # Print a message
-                print("  Response received: " + '%.3f' % delay + " sec delay")             
-            # Otherwise, if there was no response, display a message
+                print("  Ping response received: " + '%.3f' % delay + " sec delay")
+                pyb.delay(initGuardInt) # add guard interval before next transmission
+                break                
             else:
-                print("  No response received")
-            # Add guard interval before next transmission
-            pyb.delay(initGuardInt)
+                print("  No ping response")
+         
+        # Send multiple test messages to the node and measure the link quality
+        if pingSuccess:
+            for k in range(numTestTx):
+
+                # Feed the watchdog
+                if wdt:
+                    wdt.feed()
+
+                # Send the test message to the node
+                print("Sending test MSG to N" + "%03d" % nodeAddr[n] + "...")
+                nm.send_unicast_message(nodeAddr[n], testMSG) 
+                
+                # Wait for the test message response
+                timerStart = utime.ticks_ms()
+                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, timeoutms)) < 0:
+
+                    # Feed the watchdog
+                    if wdt:
+                        wdt.feed()
+
+                    # Check if a packet has been received
+                    nm.poll_receiver()
+                    nm.process_incoming_buffer()
+                    if nm.has_received_packet():        
+                        # Read the incoming packet
+                        packet = nm.get_received_packet()
+                        payload = bytes(packet.packet_payload)
+                        payloadLength = len(payload)
+                        
+                        # If the test message response is received, increment the link quality and move on
+                        if (payloadLength > 7) and (payload[0:6] == b'UNNDRX') and (struct.unpack('B', payload[6:7])[0] == nodeAddr[n]):
+                            print("  Test message response received")
+                            linkQuality[n] += 1
+                            pyb.delay(initGuardInt) # add guar interval before next transmission
+                            break
+                        else:
+                            print("  Packet received but not recognised as the test message response")
+                
+            # Print the link quality test result
+            print("Link quality with N" + "%03d" % nodeAddr[n] + ": " + str(linkQuality[n]) + "/" + str(numTestTx))
                 
     # Return the list of propagation delays
     return propDelays, linkQuality
@@ -362,6 +402,9 @@ def calcTDAMACSchedule(propDelays, connNodes, guardInt):
     
     # Sort the propagation delays from shortest to longest
     numNodes = len(propDelays)
+    for n in range(numNodes):
+        if not connNodes[n]:
+            propDelays[n] = 1000000 # set prop delays of unconnected nodes to a large value
     sInd = sorted(range(numNodes), key = lambda k: propDelays[k])
     
     # Loop through all nodes and calculate their transmit delays (0 by default)
@@ -381,7 +424,7 @@ def calcTDAMACSchedule(propDelays, connNodes, guardInt):
             txDelays[sInd[n]] = max(txDelays[sInd[n]], minDelay)
     
     # Calculate the overall frame length of the TDA-MAC scchedule
-    frameLength = max([2*propDelays[n] + txDelays[n] for n in range(numNodes) if propDelays[n] < 1e8]) + dataPktDur + reqPktDur + guardInt
+    frameLength = max([2*propDelays[n] + txDelays[n] for n in range(numNodes) if connNodes[n]]) + dataPktDur + reqPktDur + guardInt
             
     # Return the transmit delay list and the frame length
     return txDelays, frameLength
