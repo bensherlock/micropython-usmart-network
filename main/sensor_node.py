@@ -148,10 +148,7 @@ class NetProtocol:
         else:
             pass
             
-        # If the current frame is over, node can go to sleep until the start of the next frame
-        #ttnf = 0
-        #if canGoToSleep:
-        # Changed to always return the time to next frame
+        # Return the sleep flag and the time to next frame
         ttnf = self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp)
         return (canGoToSleep, ttnf)
     
@@ -201,6 +198,7 @@ class NetProtocol:
         if destNode == self.thisNode:
             self.txDelay = txd # [ms]
             self.masterNode = srcNode
+            self.childNodes = list() # reset the child node list (new schedule and topology)
             tdiDelivered = True
         
         # Otherwise this TDI needs to be forwarded to the destination node
@@ -296,7 +294,7 @@ class NetProtocol:
             else:
                 print("Sensor readings sent")
             
-            # If I have any child nodes,m do not go to sleep after this REQ    
+            # If I have any child nodes, do not go to sleep after this REQ    
             if self.childNodes:
                 sleepFlag = 0
                 
