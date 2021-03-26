@@ -308,6 +308,8 @@ class NetProtocol:
         # If necessary try to gather the data multiple times (with retransmission opportunities)
         nodesToRespond = self.shNodeAddr.copy()
         maxNumREQs = 3
+        singleHopTimeout = self.shFrameLength + 2*self.guardInt # single-hop timeout = frame dur. + 2x guard interval for safety
+        canGoToSleep = (not stay_awake) # allow the nodes to go to sleep between frames?
         for reqIndex in range(maxNumREQs):
 
             # Feed the watchdog
@@ -315,14 +317,12 @@ class NetProtocol:
                 self.wdt.feed()
 
             # Transmit broadcast REQ
-            canGoToSleep = True # allow the nodes to go to sleep between frames
             ttnf = time_till_next_frame - utime.ticks_diff(utime.ticks_ms(), frameStartTime)
             print("Sending Broadcast REQ...")
             reqTime = utime.ticks_ms()
-            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, not stay_awake, nodesToRespond)
+            gwf.sendBroadcastREQ(self.nm, data_type, reqIndex+1, ttnf, canGoToSleep, nodesToRespond)
                 
             # Start a polling loop receiving the data packets
-            singleHopTimeout = self.shFrameLength + self.guardInt
             while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(reqTime, singleHopTimeout)) < 0:
 
                 # Feed the watchdog
@@ -380,12 +380,12 @@ class NetProtocol:
                 print("Sending Unicast REQ to N" + "%03d" % r + "...")
                 reqTime = utime.ticks_ms()
                 try:
-                    ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, not stay_awake, nodesToRespond, self.wdt)
+                    ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, canGoToSleep, nodesToRespond, self.wdt)
                 except Exception as e:
                     print("Error on l. 383 in gw_node.py: " + str(e))
                 
                 # Once the SDT handshake was received, the packets should follow in a "train"          
-                dtTimeout= 2*propDelay + 2*self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
+                dtTimeout= 2*propDelay + 3*self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
                 timeoutReached = False
                 # If this is a retransmission REQ, reset the data transfer time window
                 if reqIndex > 0:

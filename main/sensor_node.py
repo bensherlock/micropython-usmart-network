@@ -276,7 +276,7 @@ class NetProtocol:
             print("REQ received from Node " + str(srcId))
             print("  Time till next frame: " + str(self.timeTillNextFrame) + " msec")
             
-            # If this is a request for location, put it into the payload payload
+            # If this is a request for location, put it into the payload
             if payload[9:10] == b'L':
                 # Create the data payload
                 dataPayload = b'L' + struct.pack('f', self.location[0]) + b'L' + struct.pack('f', self.location[1])
@@ -392,7 +392,7 @@ class NetProtocol:
                 # Transmit blank broadcast REQ
                 ttnf = max(0, self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp))
                 print("Sending Blank Broadcast REQ...")
-                gwf.sendBroadcastREQ(self.nm, "S", n+1, ttnf, True, [])        
+                gwf.sendBroadcastREQ(self.nm, "S", n+1, ttnf, (sleepFlag == 1), [])        
                 # Wait for a set interval before transmitting it again
                 pyb.delay(interval)
                 
@@ -416,7 +416,8 @@ class NetProtocol:
             
                 # Go into a loop listening for payload packets from child nodes
                 sfStartTime = utime.ticks_ms()
-                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sfStartTime, self.subframeLength + self.guardInt)) < 0:
+                timeout = self.subframeLength + 2*self.guardInt
+                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(sfStartTime, timeout)) < 0:
 
                     # Feed the watchdog
                     if self.wdt:
