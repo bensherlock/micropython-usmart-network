@@ -336,8 +336,10 @@ class NetProtocol:
                     srcId = packet.source_address
                     pktType = packet.packet_type
                     # If it is a REQ, process it by calling this function again
-                    if (pktType == 'B') and (srcId == self.masterNode) and (len(payload) > 5) and (payload[0:3] == b'UNR'):
-                        canGoToSleep = self.dealWithBroadcastREQ(srcId, payload, packetPayload)
+                    if (pktType == 'B') and (len(payload) > 5) and (payload[0:3] == b'UNR'):
+                        # But if this is a broadcast REQ not from my master node, ignore it
+                        if (srcId == self.masterNode):
+                            canGoToSleep = self.dealWithBroadcastREQ(srcId, payload, packetPayload)
                     # If it is a unicast REQ, data transmission was successful, move on to relaying
                     elif (pktType == 'U') and (len(payload) > 4) and (payload[0:3] == b'UNR'):
                         canGoToSleep = self.dealWithUnicastREQ(payload)
