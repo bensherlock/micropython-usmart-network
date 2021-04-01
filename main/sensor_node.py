@@ -62,6 +62,7 @@ class NetProtocol:
         self.ttnfTimestamp = 0              # time at which the time till next frame was saved
         self.subframeLength = 0             # subframe length for a relay node [ms]
         self.childNodes = list()            # list of child nodes for dual-hop TDA-MAC
+        self.isRelay = False                # flag indicating whether this node is a relay
         self.frameStartTime = 0             # start time of the current frame
         self.guardInt = 200                 # guard interval for timed Tx/Rx [ms]
         self.location = (0.0, 0.0)          # tuple to store the Lat-Long location
@@ -217,12 +218,14 @@ class NetProtocol:
             self.txDelay = txd # [ms]
             self.masterNode = srcNode
             self.childNodes = list() # reset the child node list (new schedule and topology)
+            self.isRelay = False
             tdiDelivered = True
         
         # Otherwise this TDI needs to be forwarded to the destination node
         else:           
             # First note the subframe length, because I will be the master node for this node
             self.subframeLength = sfLength # [ms] 
+            self.isRelay = True
             
             # Try sending a TDI and receiving an ACK
             pyb.delay(100) # first, sleep long enough to transmit the Auto-ACK
@@ -269,7 +272,7 @@ class NetProtocol:
             addr = struct.unpack('B', payload[n:n+1])[0]
             destAddr.append(int(addr))
             
-        # Respond only if this node is in the list
+        # Respond only if I am in the list
         if self.thisNode in destAddr:
         
             # Print message for debugging
@@ -313,7 +316,7 @@ class NetProtocol:
                 print("Sensor readings sent")
             
             # If I have any child nodes, do not go to sleep after this REQ    
-            if self.childNodes:
+            if self.isRelay:
                 sleepFlag = 0
                 
             # Wait for a retransmission request, if one arrives (10 sec timeout)
@@ -340,15 +343,18 @@ class NetProtocol:
                         # But if this is a broadcast REQ not from my master node, ignore it
                         if (srcId == self.masterNode):
                             canGoToSleep = self.dealWithBroadcastREQ(srcId, payload, packetPayload)
+                            sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
+                            break # finish waiting, the protocol has moved on
                     # If it is a unicast REQ, data transmission was successful, move on to relaying
                     elif (pktType == 'U') and (len(payload) > 4) and (payload[0:3] == b'UNR'):
                         canGoToSleep = self.dealWithUnicastREQ(payload)
+                        sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
+                        break # finish waiting, the protocol has moved on
+                    ### Removed this clause, to avoid resetting the sleep flag from unrecognised receptions 
                     # Otherwise, pass it up to the main packet handling function
-                    else:
-                        canGoToSleep = self.handle_packet(packet)[0]
-                    # Convert the sleep flag to an integer for internal consistency (due to recursion here!)
-                    sleepFlag = 1 if (canGoToSleep) else 0
-                    break
+                    # else:
+                        # canGoToSleep = self.handle_packet(packet)[0]
+                        # sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
         
         # Return the flag indicating if I can go to sleep or should stay awake
         return (sleepFlag == 1)
