@@ -543,8 +543,9 @@ class NetProtocol:
                                 # Transmit the missing packets again (by staying in this loop)
                         # Otherwise, pass it up to the main packet handling function
                         else:
-                            canGoToSleep = self.handle_packet(packet)[0]
-                            sleepFlag = 1 if (canGoToSleep) else 0
+                            (canGoToSleep, _, pktIgnored) = self.handle_packet(packet)[0]
+                            if not pktIgnored:
+                                sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
                 
                 # Check if the frame is over
                 frameIsOver = not anotherREQReceived
