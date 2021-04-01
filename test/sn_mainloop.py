@@ -109,7 +109,7 @@ def run_mainloop():
             if first_frame_finished and (payload[0:3] == b'UNR'):
 				print("REQ Packet received. Time since I last went to sleep: " + \
 						str(utime.ticks_diff(utime.ticks_ms(), last_sleep_start_time)) + " msec")
-            (can_go_to_sleep, time_till_next_req) = net_protocol.handle_packet(packet)
+            (can_go_to_sleep, time_till_next_req, _) = net_protocol.handle_packet(packet)
             if can_go_to_sleep:
 				print("I can go to sleep. Next REQ expected after " + str(time_till_next_req) + " msec")
 				last_sleep_start_time = utime.ticks_ms()

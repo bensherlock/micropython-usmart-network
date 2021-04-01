@@ -7,7 +7,7 @@
 # Standard Interface for NetProtocol
 #   net_protocol = sensor_node.NetProtocol() # create an object in the main application loop
 #   net_protocol.init_interfaces(modem_obj, sensor_obj) # link it with the modem and sensor payload objects
-#   (can_go_to_sleep, time_till_next_req) = net_protocol.handle_packet(packet) # handle a received packet of structure "UN..."
+#   (can_go_to_sleep, time_till_next_req, pkt_ignored) = net_protocol.handle_packet(packet) # handle a received packet of structure "UN..."
 #
 # MIT License
 #
@@ -112,11 +112,12 @@ class NetProtocol:
         self.location = location
             
     ### General packet handling function that performs a particular action given the received packet
-    # Returns (can_go_to_sleep, time_till_next_req)
+    # Returns (can_go_to_sleep, time_till_next_req, pkt_ignored)
     def handle_packet(self, packet):
             
         # Initialize the flag indicating whether the TDA-MAC frame is over after handling this packet
         canGoToSleep = False
+        pktIgnored = False
         
         # Parse the received packet
         payload = bytes(packet.packet_payload)
@@ -150,11 +151,11 @@ class NetProtocol:
         elif (pktType == 'U') and (len(payload) == 11) and (payload[0:8] == b'UNalive?'):
             self.respondToDiagnosticPacket(payload)
         else:
-            pass
+            pktIgnored = True
             
         # Return the sleep flag and the time to next frame
         ttnf = self.timeTillNextFrame - utime.ticks_diff(utime.ticks_ms(), self.ttnfTimestamp)
-        return (canGoToSleep, ttnf)
+        return (canGoToSleep, ttnf, pktIgnored)
     
     #####################################################################
     ### Function to deal with the network discovery test transmission ###
@@ -350,11 +351,12 @@ class NetProtocol:
                         canGoToSleep = self.dealWithUnicastREQ(payload)
                         sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
                         break # finish waiting, the protocol has moved on
-                    ### Removed this clause, to avoid resetting the sleep flag from unrecognised receptions 
                     # Otherwise, pass it up to the main packet handling function
-                    # else:
-                        # canGoToSleep = self.handle_packet(packet)[0]
-                        # sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
+                    else:
+                        (canGoToSleep, _, pktIgnored) = self.handle_packet(packet)[0]
+                        if not pktIgnored:
+                            sleepFlag = 1 if (canGoToSleep) else 0 # Convert the sleep flag (due to recursion here!)
+                            break
         
         # Return the flag indicating if I can go to sleep or should stay awake
         return (sleepFlag == 1)
