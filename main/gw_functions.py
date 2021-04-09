@@ -41,15 +41,14 @@ dataPktDur = round(105 + (64+16) * 12.5) # max 64-byte data packet duration
 reqPktDur = round(105 + (64+16) * 12.5) # REQ packet duration (max 64 bytes)
 tdiPktDur = round(105 + (14+16) * 12.5) # TDI packet duration
 ackPktDur = round(105 + (5+16) * 12.5) # ACK packet
-initGuardInt = 200 # 200 ms guard interval for network discovery and setup transmissions
+defGuardInt = 250 # default 250 ms guard interval for network discovery and setup transmissions
 
 ### Function that performs initial network discovery
 def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
 
     # Function parameters
     numTestTx = 5    # Number of test transmissions for each node
-    timeout = 5.0    # 5 second timeout
-    timeoutms = 5000 # timeout in milliseconds
+    timeout = 5.0    # 5 second timeout for the ping response
     
     # Define the test transmission payload
     testMSG = b'UNNDTX' + struct.pack('B', int(thisNode)) + b'USMART_Test_Transmission'
@@ -74,7 +73,7 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
             if pingSuccess:
                 propDelays[n] = round(delay*1e3) # msec
                 print("  Ping response received: " + '%.3f' % delay + " sec delay")
-                pyb.delay(initGuardInt) # add guard interval before next transmission
+                pyb.delay(defGuardInt) # add guard interval before next transmission
                 break                
             else:
                 print("  No ping response")
@@ -86,6 +85,9 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
                 # Feed the watchdog
                 if wdt:
                     wdt.feed()
+                    
+                # Set the timeout for test transmissions based on the measured propagation delay
+                thisNodeTimeout = 2 * (propDelays[n] + dataPktDur + defGuardInt)
 
                 # Send the test message to the node
                 print("Sending test MSG to N" + "%03d" % nodeAddr[n] + "...")
@@ -93,7 +95,7 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
                 
                 # Wait for the test message response
                 timerStart = utime.ticks_ms()
-                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, timeoutms)) < 0:
+                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, thisNodeTimeout)) < 0:
 
                     # Feed the watchdog
                     if wdt:
@@ -112,7 +114,7 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
                         if (payloadLength > 7) and (payload[0:6] == b'UNNDRX') and (struct.unpack('B', payload[6:7])[0] == nodeAddr[n]):
                             print("  Test message response received")
                             linkQuality[n] += 1
-                            pyb.delay(initGuardInt) # add guar interval before next transmission
+                            pyb.delay(defGuardInt) # add guar interval before next transmission
                             break
                         else:
                             print("  Packet received but not recognised as the test message response")
@@ -213,7 +215,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                                     
                             # Print message and log it
                             print("  Node discovery results received from N" + "%03d" % nodeAddr[n]) 
-                            pyb.delay(initGuardInt)
+                            pyb.delay(defGuardInt)
                             break               
                 
             # Update the list of unconnected nodes (with the link quality below threshold)
@@ -285,7 +287,7 @@ def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes, wdt=No
                             
                 # If the ACK was received, move on to next node
                 if ackReceived:
-                    pyb.delay(initGuardInt)
+                    pyb.delay(defGuardInt)
                     break
                     
     # Return the delivery success
@@ -318,7 +320,7 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength, wd
             # Check if the ACK was received
             if response > 0:                    
                 print("  ACK received from relay")
-                pyb.delay(initGuardInt)
+                pyb.delay(defGuardInt)
                 break # success, move on
             else:
                 print("  No ACK") # try again
@@ -347,7 +349,7 @@ def send2HopTDIPackets(nm, thisNode, relayAddr, nodeAddr, txDelays, sfLength, wd
                         print("  Dual-hop TDI ACK received")
                     elif payload[3:4] == b'N':
                         print("  Dual-hop TDI NACK received")
-                    pyb.delay(initGuardInt)
+                    pyb.delay(defGuardInt)
                     break
                     
 ### Function to transmit a single broadcast REQ packet
