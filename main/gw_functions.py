@@ -48,7 +48,8 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
 
     # Function parameters
     numTestTx = 5    # Number of test transmissions for each node
-    timeout = 5.0    # 5 second timeout for the ping response
+    numPingAttempts = 3 # number of initial ping exchange attempts to establish presence of link
+    timeout = 3.0 # 3 ping second timeout
     
     # Define the test transmission payload
     testMSG = b'UNNDTX' + struct.pack('B', int(thisNode)) + b'USMART_Test_Transmission'
@@ -59,7 +60,7 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
     for n in range(len(nodeAddr)):
     
         # Try pinging this node to measure the propagation delay
-        for k in range(numTestTx):
+        for k in range(numPingAttempts):
 
             # Feed the watchdog
             if wdt:
