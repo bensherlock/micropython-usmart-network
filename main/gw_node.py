@@ -7,7 +7,9 @@
 # Standard Interface for NetProtocol
 #   net_protocol = gw_node.NetProtocol()            # create an object in the main application loop
 #   net_protocol.init(modem, node_addr)             # initialise it with the modem object and list of sensor node addresses
-#   net_protocol.do_net_discovery()                 # perform network discovery
+#   net_protocol.do_net_discovery(full_rediscovery=false) # perform network discovery
+#       # One optional function input:
+#       #   - binary flag indicating whether to force a full network rediscovery
 #   net_protocol.setup_net_schedule(guard_int=500)  # set up TDA-MAC schedule and distribute it to all nodes
 #   net_protocol.get_net_info_json                  # get network info as JSON
 #   net_protocol.set_network_to_sleep(time_till_next_frame) # instruct all nodes to go to sleep for a given period [msec]
@@ -60,13 +62,15 @@ class NetProtocol:
     # Constructor method including the initialization code
     def __init__(self):
 
-        # Static parameters
+        # GW node attributes
         self.thisNode = -1          # node address to be queried from the nanomomodem
         self.relayLoads = None      # a running record of relay loads on each node (to even it out long term)
         self.guardInt = 500         # 500 ms guard interval (to be safe)
         self.lqThreshold = 5        # link quality thredhold (only use links of at least this quality if possible)
         self.debugFlag = False      # set to True for more console output
         self.dualHop = True         # enable dual-hop networking by default
+        self.dataPacketSR = None    # data packet success ratio during the latest data gathering cycle
+        self.srThreshold = 0.95     # data packet success ratio threshold (avoid retesting nodes above this)
         
         # Empty dual-hop parameters by default
         self.dhPropDelays = None
@@ -129,7 +133,7 @@ class NetProtocol:
     #######################################    
     # Method to perform network discovery #
     ####################################### 
-    def do_net_discovery(self):
+    def do_net_discovery(self, full_rediscovery=False):
 
         # Feed the watchdog
         if self.wdt:
@@ -137,16 +141,34 @@ class NetProtocol:
 
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
-        (self.shPropDelays, shlq) = gwf.doNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.wdt)
+        numNodes = len(self.nodeAddr)
+        shlq = [0]*self.numNodes
+        nodesToTest = self.nodeAddr.copy()
+        # If a full network rediscovery is not needed, avoid retesting high quality single-hop links to save time
+        if (not full_rediscovery) and self.dataPacketSR:
+            for n in range(numNodes):
+                if self.shNodes[n] and (self.dataPacketSR[n] >= self.srThreshold):
+                    nodesToTest.remove(nodeAddr[n])
+                    shlq[n] = self.lqThreshold
+            
+        # Do the single-hop network discovery for the required nodes
+        (shpd, shlqNew) = gwf.doNetDiscovery(self.nm, self.thisNode, nodesToTest, self.wdt)
+        for n in range(len(nodesToTest)):
+            nodeInd = nodeAddr.index(nodesToTest[n])
+            self.shPropDelays[nodeInd] = shpd[n]
+            shlq[nodeInd] = shlqNew[n]
+        # Wait a guard interval before continuing
         pyb.delay(self.guardInt)
         
         # If there are no nodes connected at all, display a message and exit the function
         if all(lq == 0 for lq in shlq):
             print("  No nodes in the network!")
             return False
+            
+        # Resert the data packet success ratio list for the next data gathering cycle
+        self.dataPacketSR = None
         
         # Note all nodes that can be directly connected to the gateway based on link quality
-        numNodes = len(self.nodeAddr)
         lqt = self.lqThreshold
         self.shNodes = [False]*numNodes
         # Select only the good links if dual-hop networking is enabled
@@ -305,6 +327,11 @@ class NetProtocol:
         frameStartTime = utime.ticks_ms()
         rxPackets = list()
         
+        # Initialise the data packet success ratio list if this is the first round in a cycle
+        if not self.dataPacketSR:
+            self.dataPacketSR = [-1]*len(nodeAddr)
+        ewmaAlpha = 0.2 # Exponentially weighted moving average parameter (weight of the most recent reading vs previous estimate)
+        
         # If necessary try to gather the data multiple times (with retransmission opportunities)
         nodesToRespond = self.shNodeAddr.copy()
         maxNumREQs = 3
@@ -341,7 +368,14 @@ class NetProtocol:
                         # Store the packet and decode the packet source
                         rxPackets.append(packet)
                         src = struct.unpack('B', payload[3:4])[0]     
-                        print("  Packet received from N" + "%03d" % src + ": " + str(payload))          
+                        print("  Packet received from N" + "%03d" % src + ": " + str(payload))  
+                        # Update the packet success ratio from this node
+                        nodeInd = nodeAddr.index(src)
+                        if (self.dataPacketSR[nodeInd] == -1):
+                            self.dataPacketSR[nodeInd] = 1 / (reqIndex+1)
+                        else:
+                            self.dataPacketSR[nodeInd] = (1-ewmaAlpha) * self.dataPacketSR[nodeInd] \
+                                                         + ewmaAlpha * 1 / (reqIndex+1)
                         # Remove this node from the list of nodes expected to respond
                         if src in nodesToRespond:
                             nodesToRespond.remove(src)
@@ -352,7 +386,15 @@ class NetProtocol:
             # If there are more nodes that need to respond, move on
             if not nodesToRespond:
                 break
-                
+         
+        # If there are any nodes still left to respond, update their packet success ratio
+        for n in nodesToRespond:
+            nodeInd = nodeAddr.index(n)
+            if (self.dataPacketSR[nodeInd] == -1):
+                self.dataPacketSR[nodeInd] = 0
+            else:
+                self.dataPacketSR[nodeInd] = (1-ewmaAlpha) * self.dataPacketSR[nodeInd] # plus zero (no packet received)
+         
         ###########################
         # Dual-hop data gathering #
         ###########################
