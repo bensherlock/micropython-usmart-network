@@ -100,6 +100,12 @@ class NetProtocol:
             self.relayLoads = [0]*len(self.nodeAddr)
         self.wdt = wdt
 
+        # Reset some of the variables as we've changed the nodeAddr list.
+        self.shNodes = None
+        self.shPropDelays = None
+        self.lq = None
+        self.txDelays = None
+
         # Feed the watchdog
         if self.wdt:
             self.wdt.feed()
@@ -142,19 +148,24 @@ class NetProtocol:
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
         numNodes = len(self.nodeAddr)
-        shlq = [0]*self.numNodes
+        shlq = [0]*numNodes
         nodesToTest = self.nodeAddr.copy()
+
+        # If we've called init with a new set of node addresses then we need default shPropDelays to start with
+        if not self.shPropDelays:
+            self.shPropDelays = [1000000]*numNodes  # propagation delays (huge value by default)
+
         # If a full network rediscovery is not needed, avoid retesting high quality single-hop links to save time
         if (not full_rediscovery) and self.dataPacketSR:
             for n in range(numNodes):
                 if self.shNodes[n] and (self.dataPacketSR[n] >= self.srThreshold):
-                    nodesToTest.remove(nodeAddr[n])
+                    nodesToTest.remove(self.nodeAddr[n])
                     shlq[n] = self.lqThreshold
             
         # Do the single-hop network discovery for the required nodes
         (shpd, shlqNew) = gwf.doNetDiscovery(self.nm, self.thisNode, nodesToTest, self.wdt)
         for n in range(len(nodesToTest)):
-            nodeInd = nodeAddr.index(nodesToTest[n])
+            nodeInd = self.nodeAddr.index(nodesToTest[n])
             self.shPropDelays[nodeInd] = shpd[n]
             shlq[nodeInd] = shlqNew[n]
         # Wait a guard interval before continuing
@@ -329,7 +340,7 @@ class NetProtocol:
         
         # Initialise the data packet success ratio list if this is the first round in a cycle
         if not self.dataPacketSR:
-            self.dataPacketSR = [-1]*len(nodeAddr)
+            self.dataPacketSR = [-1]*len(self.nodeAddr)
         ewmaAlpha = 0.2 # Exponentially weighted moving average parameter (weight of the most recent reading vs previous estimate)
         
         # If necessary try to gather the data multiple times (with retransmission opportunities)
@@ -370,7 +381,7 @@ class NetProtocol:
                         src = struct.unpack('B', payload[3:4])[0]     
                         print("  Packet received from N" + "%03d" % src + ": " + str(payload))  
                         # Update the packet success ratio from this node
-                        nodeInd = nodeAddr.index(src)
+                        nodeInd = self.nodeAddr.index(src)
                         if (self.dataPacketSR[nodeInd] == -1):
                             self.dataPacketSR[nodeInd] = 1 / (reqIndex+1)
                         else:
@@ -389,7 +400,7 @@ class NetProtocol:
          
         # If there are any nodes still left to respond, update their packet success ratio
         for n in nodesToRespond:
-            nodeInd = nodeAddr.index(n)
+            nodeInd = self.nodeAddr.index(n)
             if (self.dataPacketSR[nodeInd] == -1):
                 self.dataPacketSR[nodeInd] = 0
             else:
