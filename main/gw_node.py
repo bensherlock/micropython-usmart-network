@@ -70,7 +70,8 @@ class NetProtocol:
         self.debugFlag = False      # set to True for more console output
         self.dualHop = True         # enable dual-hop networking by default
         self.dataPacketSR = None    # data packet success ratio during the latest data gathering cycle
-        self.srThreshold = 0.95     # data packet success ratio threshold (avoid retesting nodes above this)
+        self.srThreshold = 0.9      # data packet success ratio threshold (avoid retesting nodes above this)
+        self.lowSrThreshold = 0.3   # data packet success ratio threshold (avoid retesting nodes below this)
         
         # Empty dual-hop parameters by default
         self.dhPropDelays = None
@@ -155,12 +156,15 @@ class NetProtocol:
         if not self.shPropDelays:
             self.shPropDelays = [1000000]*numNodes  # propagation delays (huge value by default)
 
-        # If a full network rediscovery is not needed, avoid retesting high quality single-hop links to save time
+        # If a full network rediscovery is not needed, avoid retesting very high/low quality single-hop links to save time
         if (not full_rediscovery) and self.dataPacketSR:
             for n in range(numNodes):
                 if self.shNodes[n] and (self.dataPacketSR[n] >= self.srThreshold):
                     nodesToTest.remove(self.nodeAddr[n])
                     shlq[n] = self.lqThreshold
+                elif self.shNodes[n] and (self.dataPacketSR[n] < self.lowSrThreshold):
+                    nodesToTest.remove(self.nodeAddr[n])
+                    shlq[n] = 0
             
         # Do the single-hop network discovery for the required nodes
         (shpd, shlqNew) = gwf.doNetDiscovery(self.nm, self.thisNode, nodesToTest, self.wdt)
