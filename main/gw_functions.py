@@ -147,10 +147,16 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
     nodeList = sorted(range(len(nodeAddr)), key=lambda k: relayLoads[k])
     for n in nodeList:
         if directNodes[n]:
+        
+            # Limit the number of potential leaf nodes to 10 (just in case!)
+            maxNumLeafNodes = 10
+            thisUncNodeSet = uncNodeAddr.copy()
+            if len(thisUncNodeSet) > maxNumLeafNodes:
+                thisUncNodeSet = thisUncNodeSet[0:maxNumLeafNodes]
             
             # Create the network discovery request packet with addresses of unconnected nodes
             reqPacket = b'UNN?' + struct.pack('B', int(thisNode))
-            for addr in uncNodeAddr:
+            for addr in thisUncNodeSet:
                 reqPacket += struct.pack('B', int(addr))
             
             # Try sending the packet multiple times to make sure it is received
@@ -200,14 +206,14 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                             
                             # Loop through every 5 bytes and parse it as <int><short> = <prop. delay><link quality>
                             propDelays = list()
-                            for k in range(len(uncNodeAddr)):
+                            for k in range(len(thisUncNodeSet)):
                                 # Decode the propagation delay
                                 intBytes = payload[4+k*5 : 4+(k+1)*5-1]
                                 propDelay = struct.unpack('I', intBytes)[0]
                                 # Decode the link quality
                                 lq = struct.unpack('B', payload[4+k*5+4 : 4+(k+1)*5])[0]
                                 # If the link quality exceeds the current best link quality, update the route
-                                nodeIndex = nodeAddr.index(uncNodeAddr[k])
+                                nodeIndex = nodeAddr.index(thisUncNodeSet[k])
                                 if lq > dhLQ[nodeIndex]:                           
                                     dhNodes[nodeIndex] = True
                                     dhPropDelays[nodeIndex] = propDelay
