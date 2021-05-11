@@ -128,13 +128,14 @@ def doNetDiscovery(nm, thisNode, nodeAddr, wdt=None):
 
 
 ### Function that performs dual-hop network discovery after direct nodes have been found
-def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshold, wdt=None):
+def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshold, wdt=None, skipLinks=None):
     
-    # Initialize the lists of dual-hop nodes, their propagation delays and relays
+    # Initialize the lists of dual-hop nodes, their propagation delays and relays, and a list to keep track of missing links
     dhNodes = [False]*len(nodeAddr)
     dhPropDelays = [1e9]*len(nodeAddr)
     dhRelays = [-1]*len(nodeAddr)
     dhLQ = [0]*len(nodeAddr)
+    missingLinks = list()
     
     # Create a list of nodes that are not directly connected to gateway
     uncNodeAddr = list()
@@ -153,78 +154,90 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
             thisUncNodeSet = uncNodeAddr.copy()
             if len(thisUncNodeSet) > maxNumLeafNodes:
                 thisUncNodeSet = thisUncNodeSet[0:maxNumLeafNodes]
-            
-            # Create the network discovery request packet with addresses of unconnected nodes
-            reqPacket = b'UNN?' + struct.pack('B', int(thisNode))
-            for addr in thisUncNodeSet:
-                reqPacket += struct.pack('B', int(addr))
-            
-            # Try sending the packet multiple times to make sure it is received
-            maxTries = 5
-            reqReceived = False
-            for k in range(maxTries):
-
-                # Feed the watchdog
-                if wdt:
-                    wdt.feed()
-        
-                # Send the packet
-                print("Sending the network discovery request to N" + "%03d" % nodeAddr[n])
-                response = nm.send_unicast_message_with_ack(nodeAddr[n], reqPacket)
+                
+            # If any of these links need to be skipped, do not test them
+            if skipLinks:
+                for link in skipLinks:
+                    if (len(link) == 2) and (link[0] == directNodes[n]) and (link[1] in thisUncNodeSet):
+                        thisUncNodeSet.remove(link[1])
                         
-                # Check if the ACK was received
-                if response > 0:                   
-                    # Success, move on
-                    print("  ACK received")
-                    reqReceived = True
-                    break
-                else:
-                    print("  No ACK")
-                        
-            # If the request was acknowledged, wait for the network discovery results (2 min timeout)
-            if reqReceived:
-                netDiscTimeout = 120000
-                timerStart = utime.ticks_ms()
-                while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
+            # If there are any nodes in the target set still, instruct the relay to perform network discovery
+            if thisUncNodeSet:
+            
+                # Create the network discovery request packet with addresses of unconnected nodes
+                reqPacket = b'UNN?' + struct.pack('B', int(thisNode))
+                for addr in thisUncNodeSet:
+                    reqPacket += struct.pack('B', int(addr))
+                
+                # Try sending the packet multiple times to make sure it is received
+                maxTries = 5
+                reqReceived = False
+                for k in range(maxTries):
 
                     # Feed the watchdog
                     if wdt:
                         wdt.feed()
-
-                    # Check if a packet has been received
-                    nm.poll_receiver()
-                    nm.process_incoming_buffer()
-                    if nm.has_received_packet(): 
-    
-                        # Read the incoming packet                  
-                        packet = nm.get_received_packet()   
-                        packetType = packet.packet_type
-                        payload = bytes(packet.packet_payload)
-                    
-                        # If this is a node discovery response, parse it
-                        if (packetType[0:1] == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNNR'):
+            
+                    # Send the packet
+                    print("Sending the network discovery request to N" + "%03d" % nodeAddr[n])
+                    response = nm.send_unicast_message_with_ack(nodeAddr[n], reqPacket)
                             
-                            # Loop through every 5 bytes and parse it as <int><short> = <prop. delay><link quality>
-                            propDelays = list()
-                            for k in range(len(thisUncNodeSet)):
-                                # Decode the propagation delay
-                                intBytes = payload[4+k*5 : 4+(k+1)*5-1]
-                                propDelay = struct.unpack('I', intBytes)[0]
-                                # Decode the link quality
-                                lq = struct.unpack('B', payload[4+k*5+4 : 4+(k+1)*5])[0]
-                                # If the link quality exceeds the current best link quality, update the route
-                                nodeIndex = nodeAddr.index(thisUncNodeSet[k])
-                                if lq > dhLQ[nodeIndex]:                           
-                                    dhNodes[nodeIndex] = True
-                                    dhPropDelays[nodeIndex] = propDelay
-                                    dhRelays[nodeIndex] = nodeAddr[n]
-                                    dhLQ[nodeIndex] = lq
-                                    
-                            # Print message and log it
-                            print("  Node discovery results received from N" + "%03d" % nodeAddr[n]) 
-                            pyb.delay(defGuardInt)
-                            break               
-                
+                    # Check if the ACK was received
+                    if response > 0:                   
+                        # Success, move on
+                        print("  ACK received")
+                        reqReceived = True
+                        break
+                    else:
+                        print("  No ACK")
+                            
+                # If the request was acknowledged, wait for the network discovery results (2 min timeout)
+                if reqReceived:
+                    netDiscTimeout = 120000
+                    timerStart = utime.ticks_ms()
+                    while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
+
+                        # Feed the watchdog
+                        if wdt:
+                            wdt.feed()
+
+                        # Check if a packet has been received
+                        nm.poll_receiver()
+                        nm.process_incoming_buffer()
+                        if nm.has_received_packet(): 
+        
+                            # Read the incoming packet                  
+                            packet = nm.get_received_packet()   
+                            packetType = packet.packet_type
+                            payload = bytes(packet.packet_payload)
+                        
+                            # If this is a node discovery response, parse it
+                            if (packetType[0:1] == 'U') and (len(payload) > 4) and (payload[0:4] == b'UNNR'):
+                                
+                                # Loop through every 5 bytes and parse it as <int><short> = <prop. delay><link quality>
+                                propDelays = list()
+                                for k in range(len(thisUncNodeSet)):
+                                    # Decode the propagation delay
+                                    intBytes = payload[4+k*5 : 4+(k+1)*5-1]
+                                    propDelay = struct.unpack('I', intBytes)[0]
+                                    # If the propagation delay failed to be measured (no ping), add this as a missing link
+                                    if propDelay > 1000:
+                                        missingLinks.append([directNodes[n], thisUncNodeSet[k]])
+                                    # Decode the link quality
+                                    lq = struct.unpack('B', payload[4+k*5+4 : 4+(k+1)*5])[0]
+                                    # If the link quality exceeds the current best link quality, update the route
+                                    nodeIndex = nodeAddr.index(thisUncNodeSet[k])
+                                    if lq > dhLQ[nodeIndex]:                           
+                                        dhNodes[nodeIndex] = True
+                                        dhPropDelays[nodeIndex] = propDelay
+                                        dhRelays[nodeIndex] = nodeAddr[n]
+                                        dhLQ[nodeIndex] = lq
+                                        
+                                # Print message and log it
+                                print("  Node discovery results received from N" + "%03d" % nodeAddr[n]) 
+                                pyb.delay(defGuardInt)
+                                break               
+        
             # Update the list of unconnected nodes (with the link quality below threshold)
             uncNodeAddr = list()
             for k in range(len(nodeAddr)):
@@ -237,7 +250,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                 break
             
     # Return the dual-hop topology parameters
-    return dhPropDelays, dhNodes, dhRelays, dhLQ
+    return dhPropDelays, dhNodes, dhRelays, dhLQ, missingLinks
     
 ### Function to send TDI packets to all connected nodes, return updated list of connected nodes
 def sendTDIPackets(nm, thisNode, nodeAddr, txDelays, sfLength, connNodes, wdt=None):

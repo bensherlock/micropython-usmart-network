@@ -69,6 +69,7 @@ class NetProtocol:
         self.lqThreshold = 5        # link quality thredhold (only use links of at least this quality if possible)
         self.debugFlag = False      # set to True for more console output
         self.dualHop = True         # enable dual-hop networking by default
+        self.missingLinks = None    # a record of links that had no ping response since last full network discovery
         self.dataPacketSR = None    # data packet success ratio during the latest data gathering cycle
         self.srThreshold = 0.9      # data packet success ratio threshold (avoid retesting nodes above this)
         self.lowSrThreshold = 0.3   # data packet success ratio threshold (avoid retesting nodes below this)
@@ -145,6 +146,10 @@ class NetProtocol:
         # Feed the watchdog
         if self.wdt:
             self.wdt.feed()
+            
+        # If a full network rediscovery is required, reset the list of missing links 
+        if full_rediscovery:
+            self.missingLinks = None
 
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
@@ -164,7 +169,11 @@ class NetProtocol:
                     shlq[n] = self.lqThreshold
                 elif self.shNodes[n] and (self.dataPacketSR[n] < self.lowSrThreshold):
                     nodesToTest.remove(self.nodeAddr[n])
-                    shlq[n] = 0
+        # Also avoid retesting the completely missing links
+        if (not full_rediscovery) and self.missingLinks:
+            for link in self.missingLinks:
+                if (len(link) == 2) and (link[0] == self.thisNode) and (link[1] in nodesToTest):
+                    nodesToTest.remove(link[1])
             
         # Do the single-hop network discovery for the required nodes
         (shpd, shlqNew) = gwf.doNetDiscovery(self.nm, self.thisNode, nodesToTest, self.wdt)
@@ -172,6 +181,12 @@ class NetProtocol:
             nodeInd = self.nodeAddr.index(nodesToTest[n])
             self.shPropDelays[nodeInd] = shpd[n]
             shlq[nodeInd] = shlqNew[n]
+            # If any of these links failed to connect with a ping, add them to the list
+            if (shlqNew[n] == 0) and (shpd[n] > 1000):
+                if (not self.missingLinks):
+                    self.missingLinks = list()
+                self.missingLinks.append([self.thisNode, nodesToTest[n]])
+            
         # Wait a guard interval before continuing
         pyb.delay(self.guardInt)
         
@@ -207,8 +222,15 @@ class NetProtocol:
 
             # Dual-hop network discovery stage
             print("*** Dual-hop network discovery ***")
-            (self.dhPropDelays, self.dhNodes, self.dhRelays, dhlq) = \
-                gwf.do2HNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.shNodes, self.relayLoads, self.lqThreshold, self.wdt)
+            (self.dhPropDelays, self.dhNodes, self.dhRelays, dhlq, newMissingLinks) = \
+                gwf.do2HNetDiscovery(self.nm, self.thisNode, self.nodeAddr, self.shNodes, \
+                                     self.relayLoads, self.lqThreshold, self.wdt, self.missingLinks)
+            # Append newly discovered missing links to the list
+            if newMissingLinks:
+                for link in newMissingLinks:
+                    if len(link == 2): # just to check the format
+                        self.missingLinks.append(link)
+                        
             pyb.delay(self.guardInt)
                                                         
             # If any dual-hop connections have a lower/same link quality than the single-hop connection, choose single-hop
