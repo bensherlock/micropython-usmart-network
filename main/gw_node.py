@@ -94,12 +94,13 @@ class NetProtocol:
     # Initialisation method #
     ######################### 
     def init(self, modem, node_addr, wdt=None):
-        
+
+        # This function can be called multiple times with new node addresses (node_addr can therefore change length).
+
         # Store a reference to the modem object the list of sensor node addresses
         self.nm = modem
         self.nodeAddr = node_addr.copy()
-        if not self.relayLoads:
-            self.relayLoads = [0]*len(self.nodeAddr)
+        self.relayLoads = [0]*len(self.nodeAddr)
         self.wdt = wdt
 
         # Reset some of the variables as we've changed the nodeAddr list.
