@@ -229,7 +229,7 @@ class NetProtocol:
             # Append newly discovered missing links to the list
             if newMissingLinks:
                 for link in newMissingLinks:
-                    if len(link == 2): # just to check the format
+                    if len(link) == 2: # just to check the format
                         self.missingLinks.append(link)
                         
             pyb.delay(self.guardInt)
