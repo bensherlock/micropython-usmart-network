@@ -24,6 +24,7 @@
 # MIT License
 #
 # Copyright (c) 2020 Nils Morozs <nils.morozs@york.ac.uk>
+# Copyright (c) 2020 Benjamin Sherlock <benjamin.sherlock@ncl.ac.uk>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -89,6 +90,14 @@ class NetProtocol:
         self.shPropDelays = None
         self.lq = None
         self.txDelays = None
+
+        # Network Discovery Info
+        self.last_discovery_type = None
+        self.last_discovery_starttime = None
+        self.last_discovery_endtime = None
+        self.last_net_scheduling_starttime = None
+        self.last_net_scheduling_endtime = None
+
            
     #########################    
     # Initialisation method #
@@ -147,7 +156,16 @@ class NetProtocol:
         # Feed the watchdog
         if self.wdt:
             self.wdt.feed()
-            
+
+        # Network Discovery Info
+        if full_rediscovery:
+            self.last_discovery_type = "full"
+        else:
+            self.last_discovery_type = "partial"
+
+        self.last_discovery_starttime = utime.time()
+
+
         # If a full network rediscovery is required, reset the list of missing links 
         if full_rediscovery:
             self.missingLinks = None
@@ -194,6 +212,7 @@ class NetProtocol:
         # If there are no nodes connected at all, display a message and exit the function
         if all(lq == 0 for lq in shlq):
             print("  No nodes in the network!")
+            self.last_discovery_endtime = utime.time()
             return False
             
         # Resert the data packet success ratio list for the next data gathering cycle
@@ -269,7 +288,8 @@ class NetProtocol:
             else:
                 print("N" + "%03d" % self.nodeAddr[n] + ": not connected")
         print("")
-            
+
+        self.last_discovery_endtime = utime.time()
         # Return True if any nodes were discovered 
         return True
     
@@ -277,7 +297,9 @@ class NetProtocol:
     # Method to set up the network schedule and distribute it to all sensor nodes #
     ###############################################################################
     def setup_net_schedule(self, guard_int=500):
-        
+
+        self.last_net_scheduling_starttime = utime.time()
+
         # Calculate transmit delays that need to be assigned to the connected nodes, and the frame length
         print("*** Network setup ***")
         self.guardInt = guard_int
@@ -331,7 +353,8 @@ class NetProtocol:
                 # Note the transmit delay for each child node
                 for a in childNodeAddr:
                     self.txDelays[self.nodeAddr.index(a)] = txDelays[childNodeAddr.index(a)]
-                
+
+        self.last_net_scheduling_endtime = utime.time()
         print("*** Network setup complete ***")
         
     ###############################################################    
@@ -340,6 +363,7 @@ class NetProtocol:
     def get_net_info_json(self):
         
         # Put the network connection pattern, propagation delays, link qualities, and TDA-MAC schedule into a JSON object
+        # Add the Network Discovery Info too
         jason = {"addresses": self.nodeAddr,
                  "direct_connections": self.shNodes,
                  "single_hop_prop_delays": self.shPropDelays,
@@ -348,6 +372,11 @@ class NetProtocol:
                  "link_quality": self.lq,
                  "transmit_delays": self.txDelays,
                  "subframe_lengths": self.sfLengths,
+                 "last_discovery_type": self.last_discovery_type,
+                 "last_discovery_starttime": self.last_discovery_starttime,
+                 "last_discovery_endtime": self.last_discovery_endtime,
+                 "last_net_scheduling_starttime": self.last_net_scheduling_starttime,
+                 "last_net_scheduling_endtime": self.last_net_scheduling_endtime
                  }
         return jason
     
