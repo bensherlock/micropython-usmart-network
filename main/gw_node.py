@@ -67,7 +67,7 @@ class NetProtocol:
         self.thisNode = -1          # node address to be queried from the nanomomodem
         self.relayLoads = None      # a running record of relay loads on each node (to even it out long term)
         self.guardInt = 500         # 500 ms guard interval (to be safe)
-        self.lqThreshold = 5        # link quality thredhold (only use links of at least this quality if possible)
+        self.lqThreshold = 4        # link quality thredhold (only use links of at least this quality if possible)
         self.debugFlag = False      # set to True for more console output
         self.dualHop = True         # enable dual-hop networking by default
         self.missingLinks = None    # a record of links that had no ping response since last full network discovery
@@ -147,7 +147,16 @@ class NetProtocol:
 
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print("")
-        
+
+
+    ############################################
+    # Method to set the link quality threshold #
+    ############################################
+    def set_link_quality_threshold(self, link_quality_threshold):
+        if 0 < link_quality_threshold <= 5:
+            self.lqThreshold = link_quality_threshold
+
+
     #######################################    
     # Method to perform network discovery #
     ####################################### 
