@@ -396,7 +396,7 @@ class NetProtocol:
         
         # Initialise the data packet success ratio list if this is the first round in a cycle
         if not self.dataPacketSR:
-            self.dataPacketSR = [-1]*len(self.nodeAddr)
+            self.dataPacketSR = [1]*len(self.nodeAddr)
         ewmaAlpha = 0.2 # Exponentially weighted moving average parameter (weight of the most recent reading vs previous estimate)
         
         # If necessary try to gather the data multiple times (with retransmission opportunities)
