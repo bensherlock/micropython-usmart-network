@@ -73,7 +73,8 @@ class NetProtocol:
         self.missingLinks = None    # a record of links that had no ping response since last full network discovery
         self.dataPacketSR = None    # data packet success ratio during the latest data gathering cycle
         self.srThreshold = 0.9      # data packet success ratio threshold (avoid retesting nodes above this)
-        self.lowSrThreshold = 0.3   # data packet success ratio threshold (avoid retesting nodes below this)
+        self.lowSrThreshold = 0.05  # data packet success ratio threshold (avoid retesting nodes below this)
+        self.frameCounter = 0       # keep track of the number of frames since network discvery
         
         # Empty dual-hop parameters by default
         self.dhPropDelays = None
@@ -297,6 +298,9 @@ class NetProtocol:
             else:
                 print("N" + "%03d" % self.nodeAddr[n] + ": not connected")
         print("")
+        
+        # Reset the frame counter
+        self.frameCounter = 0
 
         self.last_discovery_endtime = utime.time()
         # Return True if any nodes were discovered 
@@ -402,11 +406,11 @@ class NetProtocol:
         print("")
         frameStartTime = utime.ticks_ms()
         rxPackets = list()
+        self.frameCounter += 1 
         
         # Initialise the data packet success ratio list if this is the first round in a cycle
         if not self.dataPacketSR:
             self.dataPacketSR = [1]*len(self.nodeAddr)
-        ewmaAlpha = 0.2 # Exponentially weighted moving average parameter (weight of the most recent reading vs previous estimate)
         
         # If necessary try to gather the data multiple times (with retransmission opportunities)
         nodesToRespond = self.shNodeAddr.copy()
@@ -447,11 +451,8 @@ class NetProtocol:
                         print("  Packet received from N" + "%03d" % src + ": " + str(payload))  
                         # Update the packet success ratio from this node
                         nodeInd = self.nodeAddr.index(src)
-                        if (self.dataPacketSR[nodeInd] == -1):
-                            self.dataPacketSR[nodeInd] = 1 / (reqIndex+1)
-                        else:
-                            self.dataPacketSR[nodeInd] = (1-ewmaAlpha) * self.dataPacketSR[nodeInd] \
-                                                         + ewmaAlpha * 1 / (reqIndex+1)
+                        self.dataPacketSR[nodeInd] = ((self.frameCounter-1)/self.frameCounter) * self.dataPacketSR[nodeInd] \
+                                                         + (1/self.frameCounter) * 1 / (reqIndex+1)
                         # Remove this node from the list of nodes expected to respond
                         if src in nodesToRespond:
                             nodesToRespond.remove(src)
@@ -466,10 +467,7 @@ class NetProtocol:
         # If there are any nodes still left to respond, update their packet success ratio
         for n in nodesToRespond:
             nodeInd = self.nodeAddr.index(n)
-            if (self.dataPacketSR[nodeInd] == -1):
-                self.dataPacketSR[nodeInd] = 0
-            else:
-                self.dataPacketSR[nodeInd] = (1-ewmaAlpha) * self.dataPacketSR[nodeInd] # plus zero (no packet received)
+            self.dataPacketSR[nodeInd] = ((self.frameCounter-1)/self.frameCounter) * self.dataPacketSR[nodeInd] # + 0
          
         ###########################
         # Dual-hop data gathering #
