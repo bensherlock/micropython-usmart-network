@@ -73,7 +73,7 @@ class NetProtocol:
         self.missingLinks = None    # a record of links that had no ping response since last full network discovery
         self.dataPacketSR = None    # data packet success ratio during the latest data gathering cycle
         self.srThreshold = 0.9      # data packet success ratio threshold (avoid retesting nodes above this)
-        self.lowSrThreshold = 0.05  # data packet success ratio threshold (avoid retesting nodes below this)
+        self.lowSrThreshold = 0.1   # data packet success ratio threshold (avoid retesting nodes below this)
         self.frameCounter = 0       # keep track of the number of frames since network discvery
         
         # Empty dual-hop parameters by default
@@ -179,6 +179,9 @@ class NetProtocol:
         # If a full network rediscovery is required, reset the list of missing links 
         if full_rediscovery:
             self.missingLinks = None
+            
+        # Reset the frame counter
+        self.frameCounter = 0
 
         # Perform single-hop network discovery, store the propagation delays and link quality
         print("*** Single-hop network discovery ***")
@@ -225,7 +228,7 @@ class NetProtocol:
             self.last_discovery_endtime = utime.time()
             return False
             
-        # Resert the data packet success ratio list for the next data gathering cycle
+        # Reset the data packet success ratio list for the next data gathering cycle
         self.dataPacketSR = None
         
         # Note all nodes that can be directly connected to the gateway based on link quality
@@ -298,9 +301,6 @@ class NetProtocol:
             else:
                 print("N" + "%03d" % self.nodeAddr[n] + ": not connected")
         print("")
-        
-        # Reset the frame counter
-        self.frameCounter = 0
 
         self.last_discovery_endtime = utime.time()
         # Return True if any nodes were discovered 
