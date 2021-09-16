@@ -201,11 +201,12 @@ class NetProtocol:
                     shlq[n] = self.lqThreshold
                 elif self.shNodes[n] and (self.dataPacketSR[n] < self.lowSrThreshold):
                     nodesToTest.remove(self.nodeAddr[n])
-        # Also avoid retesting the completely missing links
-        if (not full_rediscovery) and self.missingLinks:
-            for link in self.missingLinks:
-                if (len(link) == 2) and (link[0] == self.thisNode) and (link[1] in nodesToTest):
-                    nodesToTest.remove(link[1])
+        ##### EDIT: Try to connect to nodes directly, regardless of the previous discovery result
+        # # Also avoid retesting the completely missing links
+        # if (not full_rediscovery) and self.missingLinks:
+            # for link in self.missingLinks:
+                # if (len(link) == 2) and (link[0] == self.thisNode) and (link[1] in nodesToTest):
+                    # nodesToTest.remove(link[1])
             
         # Do the single-hop network discovery for the required nodes
         (shpd, shlqNew) = gwf.doNetDiscovery(self.nm, self.thisNode, nodesToTest, self.wdt)
@@ -498,7 +499,7 @@ class NetProtocol:
                 try:
                     ureqAcked = gwf.sendUnicastREQ(self.nm, data_type, reqIndex+1, self.thisNode, r, canGoToSleep, nodesToRespond, self.wdt)
                 except Exception as e:
-                    print("Error on l. 383 in gw_node.py: " + str(e))
+                    print("Error on l. 501 in gw_node.py: " + str(e))
                 
                 # Once the SDT handshake was received, the packets should follow in a "train"          
                 dtTimeout= 2*propDelay + 3*self.guardInt + len(nodesToRespond)*(gwf.dataPktDur + self.guardInt)
