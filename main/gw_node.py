@@ -99,6 +99,9 @@ class NetProtocol:
         self.last_net_scheduling_starttime = None
         self.last_net_scheduling_endtime = None
 
+        # Data gathering info
+        self.last_data_gathering_starttime = None
+        self.last_data_gathering_endtime = None
            
     #########################    
     # Initialisation method #
@@ -386,6 +389,8 @@ class NetProtocol:
                  "link_quality": self.lq,
                  "transmit_delays": self.txDelays,
                  "subframe_lengths": self.sfLengths,
+                 "missing_links": self.missingLinks,
+                 "relay_loads": self.relayLoads,
                  "last_discovery_type": self.last_discovery_type,
                  "last_discovery_starttime": self.last_discovery_starttime,
                  "last_discovery_endtime": self.last_discovery_endtime,
@@ -393,12 +398,32 @@ class NetProtocol:
                  "last_net_scheduling_endtime": self.last_net_scheduling_endtime
                  }
         return jason
-    
+
+    #####################################################
+    # Method to extract the data gathering info as JSON #
+    #####################################################
+    def get_data_gathering_info_json(self):
+
+        # Put the network connection pattern, propagation delays, link qualities, and TDA-MAC schedule into a JSON object
+        # Add the Network Discovery Info too
+        jason = {"addresses": self.nodeAddr,
+                 "direct_connections": self.shNodes,
+                 "relays": self.dhRelays,
+                 "data_packet_success_rate": self.dataPacketSR,
+                 "missing_links": self.missingLinks,
+                 "last_data_gathering_starttime": self.last_data_gathering_starttime,
+                 "last_data_gathering_endtime": self.last_data_gathering_endtime
+                 }
+        return jason
+
     #####################################################################    
     # Method to perform a round of data gathering from all sensor nodes #
     ##################################################################### 
     def gather_sensor_data(self, time_till_next_frame, stay_awake, data_type="S"):
-        
+
+        self.last_data_gathering_starttime = utime.time()
+
+
         #############################
         # Single-hop data gathering #
         #############################
@@ -551,11 +576,13 @@ class NetProtocol:
                 # If there is no response from relay after 60 sec, or all data has been gathered, move on
                 if noResponseFromRelay or (not nodesToRespond):
                     break  
-                    
+
         print("")
         print("*** Data gathering cycle completed ***")
         print("")
-        
+
+        self.last_data_gathering_endtime = utime.time()
+
         # Return the list of packets received in this cycle
         return rxPackets
         
