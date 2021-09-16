@@ -158,7 +158,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
             # If any of these links need to be skipped, do not test them
             if skipLinks:
                 for link in skipLinks:
-                    if (len(link) == 2) and (link[0] == directNodes[n]) and (link[1] in thisUncNodeSet):
+                    if (len(link) == 2) and (link[0] == nodeAddr[n]) and (link[1] in thisUncNodeSet):
                         thisUncNodeSet.remove(link[1])
                         
             # If there are any nodes in the target set still, instruct the relay to perform network discovery
