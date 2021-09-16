@@ -222,7 +222,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                                     propDelay = struct.unpack('I', intBytes)[0]
                                     # If the propagation delay failed to be measured (no ping), add this as a missing link
                                     if propDelay > 1000:
-                                        missingLinks.append([directNodes[n], thisUncNodeSet[k]])
+                                        missingLinks.append([nodeAddr[n], thisUncNodeSet[k]])
                                     # Decode the link quality
                                     lq = struct.unpack('B', payload[4+k*5+4 : 4+(k+1)*5])[0]
                                     # If the link quality exceeds the current best link quality, update the route
