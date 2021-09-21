@@ -47,6 +47,7 @@
 # Import the standard pyBoard modules
 import pyb
 import machine
+import random
 import struct
 import utime
 
@@ -113,6 +114,8 @@ class NetProtocol:
         # Store a reference to the modem object the list of sensor node addresses
         self.nm = modem
         self.nodeAddr = node_addr.copy()
+        # Randomise the order of node addresses
+        self.shuffle(self.nodeAddr)  # shuffle in place
         self.relayLoads = [0]*len(self.nodeAddr)
         self.wdt = wdt
 
@@ -151,6 +154,17 @@ class NetProtocol:
 
         print("  Voltage supplied to the modem: " + '%0.2f' % voltage + "V")
         print("")
+
+    #####################################
+    # Method to shuffle a list in place #
+    #####################################
+    def shuffle(self, container):
+        # From https://stackoverflow.com/questions/17489477/shuffle-a-python-list-without-using-the-built-in-function
+        for index in range(len(container)-1, 0, -1):
+            other = random.randint(0, index)
+            if other == index:
+                continue
+            container[index], container[other] = container[other], container[index]
 
 
     ############################################
