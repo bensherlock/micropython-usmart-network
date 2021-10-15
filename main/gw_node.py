@@ -232,7 +232,7 @@ class NetProtocol:
             self.shPropDelays[nodeInd] = shpd[n]
             shlq[nodeInd] = shlqNew[n]
             # If any of these links failed to connect with a ping, add them to the list
-            if (shlqNew[n] == 0) and (shpd[n] > 1000):
+            if (shlqNew[n] == 0) and (shpd[n] > 100000):
                 if (not self.missingLinks):
                     self.missingLinks = list()
                 self.missingLinks.append([self.thisNode, nodesToTest[n]])

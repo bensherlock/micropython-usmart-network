@@ -193,7 +193,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                             
                 # If the request was acknowledged, wait for the network discovery results (2 min timeout)
                 if reqReceived:
-                    netDiscTimeout = 120000
+                    netDiscTimeout = 240000
                     timerStart = utime.ticks_ms()
                     while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
 
@@ -221,7 +221,7 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                                     intBytes = payload[4+k*5 : 4+(k+1)*5-1]
                                     propDelay = struct.unpack('I', intBytes)[0]
                                     # If the propagation delay failed to be measured (no ping), add this as a missing link
-                                    if propDelay > 1000:
+                                    if propDelay > 100000:
                                         missingLinks.append([nodeAddr[n], thisUncNodeSet[k]])
                                     # Decode the link quality
                                     lq = struct.unpack('B', payload[4+k*5+4 : 4+(k+1)*5])[0]
