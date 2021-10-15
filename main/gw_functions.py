@@ -191,9 +191,9 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                     else:
                         print("  No ACK")
                             
-                # If the request was acknowledged, wait for the network discovery results (2 min timeout)
+                # If the request was acknowledged, wait for the network discovery results (Max 25 sec per node + 10 sec buffer)
                 if reqReceived:
-                    netDiscTimeout = 240000
+                    netDiscTimeout = 25000 * len(thisUncNodeSet) + 10000
                     timerStart = utime.ticks_ms()
                     while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
 
