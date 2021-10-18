@@ -191,9 +191,12 @@ def do2HNetDiscovery(nm, thisNode, nodeAddr, directNodes, relayLoads, lqThreshol
                     else:
                         print("  No ACK")
                             
-                # If the request was acknowledged, wait for the network discovery results (Max 25 sec per node + 10 sec buffer)
+                # If the request was acknowledged, wait for the network discovery results (Max 37 sec per node + 10 sec buffer)
+                # Extreme boundary of node right at limit of range, responding on the third ping.
+                # 3of 4 second propagation delay pings + 5of 4 second propagation delay packets each way, each packet of 0.5 second duration.
+                # 12 + 20 + 5 = 37 seconds
                 if reqReceived:
-                    netDiscTimeout = 25000 * len(thisUncNodeSet) + 10000
+                    netDiscTimeout = 37000 * len(thisUncNodeSet) + 10000
                     timerStart = utime.ticks_ms()
                     while utime.ticks_diff(utime.ticks_ms(), utime.ticks_add(timerStart, netDiscTimeout)) < 0:
 
